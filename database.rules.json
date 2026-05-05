@@ -1,6 +1,10 @@
 {
   "rules": {
-    "readings": {
+    "sensor": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "control": {
       ".read": "auth != null",
       ".write": "auth != null"
     }

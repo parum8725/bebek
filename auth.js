@@ -14,7 +14,7 @@ import {
   setPersistence,
   inMemoryPersistence,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
+import { getDatabase, ref, onValue, set, get } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
 
 const cfg = window.__firebaseConfig;
 const isPlaceholder =
@@ -41,6 +41,7 @@ let mode = 'register';
 let auth = null;
 let firebaseApp = null;
 let rtdbUnsubscribe = null;
+let controlUnsubscribe = null;
 
 function detachRtdb() {
   if (rtdbUnsubscribe) {
@@ -49,18 +50,73 @@ function detachRtdb() {
   }
 }
 
+function detachControl() {
+  if (controlUnsubscribe) {
+    controlUnsubscribe();
+    controlUnsubscribe = null;
+  }
+}
+
+function attachControl(app) {
+  detachControl();
+  const db = getDatabase(app);
+  const controlRef = ref(db, 'control');
+
+  console.log('🔗 Mendengarkan control commands dari:', 'control');
+
+  controlUnsubscribe = onValue(controlRef, (snap) => {
+    const v = snap.val();
+    console.log('📡 Control state dari Firebase:', v);
+
+    if (v && typeof window.setStatus === 'function') {
+      // Update SEMUA relay status, tidak peduli null atau tidak
+      const heaterStatus = v.heater || 'OFF';
+      const intakeStatus = v.intake || 'OFF';
+      const exhaustStatus = v.exhaust || 'OFF';
+
+      console.log('🔥 Update Heater:', heaterStatus);
+      window.setStatus('heater', heaterStatus);
+
+      console.log('💨 Update Intake:', intakeStatus);
+      window.setStatus('intake', intakeStatus);
+
+      console.log('💨 Update Exhaust:', exhaustStatus);
+      window.setStatus('exhaust', exhaustStatus);
+    }
+  }, (error) => {
+    console.error('❌ Error membaca control:', error);
+  });
+}
+
 function attachRtdb(app) {
   detachRtdb();
   const db = getDatabase(app);
-  const latestRef = ref(db, 'readings/latest');
+  const sensorRef = ref(db, 'sensor');
 
-  rtdbUnsubscribe = onValue(latestRef, (snap) => {
+  console.log('🔗 Menghubung ke Firebase Realtime DB:', 'sensor');
+
+  rtdbUnsubscribe = onValue(sensorRef, (snap) => {
     const v = snap.val();
+    console.log('📨 Data dari Firebase:', v);
+    console.log('📋 Detail struktur:', {
+      suhu: v?.suhu,
+      kelembapan: v?.kelembapan,
+      amonia: v?.amonia,
+      heater: v?.heater,
+      intake: v?.intake,
+      exhaust: v?.exhaust,
+      updatedAt: v?.updatedAt
+    });
+
     if (v && typeof window.applyReadingFromFirebase === 'function') {
+      console.log('✅ Menampilkan data ke dashboard');
       window.applyReadingFromFirebase(v);
     } else if (typeof window.setAwaitingSensor === 'function') {
+      console.log('⏳ Menunggu data sensor...');
       window.setAwaitingSensor(true);
     }
+  }, (error) => {
+    console.error('❌ Error membaca Firebase:', error);
   });
 }
 
@@ -198,6 +254,25 @@ elLogout.addEventListener('click', async () => {
   }
 });
 
+async function writeRelayCommand(relayName, status) {
+  if (!firebaseApp) {
+    throw new Error('Firebase belum initialize');
+  }
+
+  const db = getDatabase(firebaseApp);
+  const commandRef = ref(db, `control/${relayName}`);
+
+  console.log(`📤 Mengirim: control/${relayName} = ${status}`);
+
+  try {
+    await set(commandRef, status);
+    console.log(`✅ Berhasil kirim: ${relayName} = ${status}`);
+  } catch (error) {
+    console.error(`❌ Error kirim command:`, error);
+    throw error;
+  }
+}
+
 [elEmail, elPassword].forEach((el) => {
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') elSubmit.click();
@@ -232,22 +307,28 @@ async function boot() {
 
   onAuthStateChanged(auth, (user) => {
     if (user) {
+      console.log('👤 User login:', user.email);
       const uid = user.uid;
       if (uid !== lastUid) {
         lastUid = uid;
         showDashboardView();
         if (typeof window.resetDashboard === 'function') window.resetDashboard();
         attachRtdb(firebaseApp);
+        attachControl(firebaseApp);
         if (typeof window.startMonitoring === 'function') window.startMonitoring();
       }
     } else {
+      console.log('👤 User logout');
       lastUid = null;
       detachRtdb();
+      detachControl();
       if (typeof window.stopMonitoring === 'function') window.stopMonitoring();
       if (typeof window.resetDashboard === 'function') window.resetDashboard();
       showAuthView();
     }
   });
 }
+
+window.writeRelayCommand = writeRelayCommand;
 
 boot().catch(console.error);

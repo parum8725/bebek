@@ -7,6 +7,10 @@ let dataLog = [];
 let monitoringActive = false;
 let lastAppliedReadingKey = null;
 
+/* PAGINATION */
+let currentPage = 1;
+const ROWS_PER_PAGE = 10;
+
 /* CHART 1: SUHU + KELEMBAPAN */
 let chart1 = new Chart(document.getElementById('chartSuhuKelembapan'), {
   type: 'line',
@@ -82,42 +86,34 @@ let chart2 = new Chart(document.getElementById('chartAmonia'), {
 });
 
 function normalizeReading(v) {
-  if (v == null || v.suhu == null) return null;
+  console.log('🔍 Normalizing data:', v);
 
-  const suhu =
-    typeof v.suhu === 'number' ? v.suhu.toFixed(1) : String(v.suhu);
+  if (v == null || v.suhu == null) {
+    console.log('❌ Data null atau suhu null, returning null');
+    return null;
+  }
+
+  // Ambil data dari struktur sensor Firebase
+  const suhu = typeof v.suhu === 'number' ? v.suhu.toFixed(1) : String(v.suhu ?? '-');
+
+  // Fix typo: kelembaban → kelembapan (untuk display)
   const kelembapan =
-    v.kelembapan != null
-      ? typeof v.kelembapan === 'number'
-        ? v.kelembapan.toFixed(1)
-        : String(v.kelembapan)
+    v.kelembaban != null
+      ? (typeof v.kelembaban === 'number' ? v.kelembaban.toFixed(1) : String(v.kelembaban))
       : '0';
+
+  // gasAnalog = nilai amonia dalam ppm
   const amonia =
-    v.amonia != null
-      ? typeof v.amonia === 'number'
-        ? v.amonia.toFixed(1)
-        : String(v.amonia)
+    v.gasAnalog != null
+      ? (typeof v.gasAnalog === 'number' ? v.gasAnalog.toFixed(1) : String(v.gasAnalog))
       : '0';
 
-  const s = parseFloat(suhu);
-  const k = parseFloat(kelembapan);
-  const a = parseFloat(amonia);
-
-  let heater = v.heater;
-  let intake = v.intake;
-  let exhaust = v.exhaust;
-
-  if (heater !== 'ON' && heater !== 'OFF') {
-    heater = s < 32 ? 'ON' : 'OFF';
-  }
-  if (intake !== 'ON' && intake !== 'OFF') {
-    intake = s > 35 || k > 70 || a >= 25 ? 'ON' : 'OFF';
-  }
-  if (exhaust !== 'ON' && exhaust !== 'OFF') {
-    exhaust = intake;
-  }
-
-  return { suhu, kelembapan, amonia, heater, intake, exhaust };
+  // ⚠️ TIDAK generate relay status otomatis dari sensor data
+  // Relay status diambil dari /control path di Firebase
+  // Jadi return hanya sensor data (suhu, kelembapan, amonia)
+  const result = { suhu, kelembapan, amonia, heater: null, intake: null, exhaust: null };
+  console.log('✔️ Normalized result:', result);
+  return result;
 }
 
 function readingTimestamp(v) {
@@ -153,9 +149,11 @@ function applyReadingFromFirebase(v) {
   setColor('kelembapan', kelembapan, 60, 70);
   setAmoniaColor('amonia', amonia);
 
-  setStatus('heater', heater);
-  setStatus('intake', intake);
-  setStatus('exhaust', exhaust);
+  // ⚠️ JANGAN update relay status dari /sensor data
+  // Relay status hanya diupdate dari /control listener di auth.js
+  // setStatus('heater', heater);
+  // setStatus('intake', intake);
+  // setStatus('exhaust', exhaust);
 
   addTable(suhu, kelembapan, amonia, heater, intake, exhaust, ts);
 
@@ -224,13 +222,24 @@ function addTable(suhu, kelembapan, amonia, heater, intake, exhaust, rowTs) {
   row.insertCell(3).innerText = suhu;
   row.insertCell(4).innerText = kelembapan;
   row.insertCell(5).innerText = amonia;
-  row.insertCell(6).innerText = heater;
-  row.insertCell(7).innerText = intake;
-  row.insertCell(8).innerText = exhaust;
+
+  // ===== RELAY CELLS DENGAN STYLING =====
+  let cellHeater = row.insertCell(6);
+  cellHeater.innerText = heater;
+  cellHeater.className = 'relay-cell ' + (heater === 'ON' ? 'relay-on' : 'relay-off');
+
+  let cellIntake = row.insertCell(7);
+  cellIntake.innerText = intake;
+  cellIntake.className = 'relay-cell ' + (intake === 'ON' ? 'relay-on' : 'relay-off');
+
+  let cellExhaust = row.insertCell(8);
+  cellExhaust.innerText = exhaust;
+  cellExhaust.className = 'relay-cell ' + (exhaust === 'ON' ? 'relay-on' : 'relay-off');
 
   dataLog.unshift([suhu, kelembapan, amonia, heater, intake, exhaust]); // 🔥 juga dibalik
 
   updateNumbering();
+  updateTablePagination();
 }
 
 /* NOMOR OTOMATIS */
@@ -240,6 +249,63 @@ function updateNumbering() {
   for (let i = 1; i < table.rows.length; i++) {
     table.rows[i].cells[0].innerText = i;
   }
+}
+
+/* PAGINATION */
+function updateTablePagination() {
+  let table = document.getElementById('dataTable');
+  let tbody = document.getElementById('tableBody');
+
+  const totalRows = tbody.rows.length;
+  const totalPages = Math.ceil(totalRows / ROWS_PER_PAGE);
+
+  // Validasi halaman
+  if (currentPage > totalPages && totalPages > 0) {
+    currentPage = totalPages;
+  } else if (currentPage < 1) {
+    currentPage = 1;
+  }
+
+  // Hitung range data yang ditampilkan
+  const startIdx = (currentPage - 1) * ROWS_PER_PAGE;
+  const endIdx = startIdx + ROWS_PER_PAGE;
+
+  // Sembunyikan semua baris, tampilkan hanya yang di page ini
+  const allRows = tbody.querySelectorAll('tr');
+  allRows.forEach((row, idx) => {
+    row.style.display = idx >= startIdx && idx < endIdx ? '' : 'none';
+  });
+
+  // Update info
+  const startNo = totalRows > 0 ? startIdx + 1 : 0;
+  const endNo = Math.min(endIdx, totalRows);
+  document.getElementById('infoData').innerText =
+    totalRows === 0 ? '0–0 dari 0 baris' : `${startNo}–${endNo} dari ${totalRows} baris`;
+
+  // Update page info
+  document.getElementById('pageInfo').innerText =
+    totalPages === 0 ? '0 / 0' : `${currentPage} / ${totalPages}`;
+
+  // Disable/enable buttons
+  document.querySelectorAll('.pagination button').forEach(btn => {
+    if (btn.textContent === 'Prev') {
+      btn.disabled = currentPage <= 1;
+    } else if (btn.textContent === 'Next') {
+      btn.disabled = currentPage >= totalPages;
+    }
+  });
+}
+
+function nextPage() {
+  currentPage++;
+  updateTablePagination();
+}
+
+function prevPage() {
+  if (currentPage > 1) {
+    currentPage--;
+  }
+  updateTablePagination();
 }
 
 /* DOWNLOAD CSV */
@@ -287,6 +353,10 @@ function resetDashboard() {
   setStatus('intake', 'OFF');
   setStatus('exhaust', 'OFF');
 
+  // Reset pagination
+  currentPage = 1;
+  updateTablePagination();
+
   chart1.update();
   chart2.update();
 }
@@ -301,8 +371,48 @@ function stopMonitoring() {
   monitoringActive = false;
 }
 
+function toggleRelayButton(relayName) {
+  const btn = event.target;
+  btn.disabled = true;
+
+  // Ambil status sekarang dari element
+  const statusEl = document.getElementById(relayName);
+  const isCurrentlyOn = statusEl.classList.contains('on');
+  const newStatus = isCurrentlyOn ? 'OFF' : 'ON';
+
+  console.log(`🔄 Toggle ${relayName}: ${isCurrentlyOn ? 'ON' : 'OFF'} → ${newStatus}`);
+
+  // Kirim command ke Firebase
+  sendRelayCommand(relayName, newStatus)
+    .then(() => {
+      console.log(`✅ Command ${relayName} = ${newStatus} berhasil dikirim`);
+    })
+    .catch((error) => {
+      console.error(`❌ Error mengirim command ${relayName}:`, error);
+      alert(`Gagal mengirim command: ${error.message}`);
+    })
+    .finally(() => {
+      btn.disabled = false;
+    });
+}
+
+async function sendRelayCommand(relayName, status) {
+  // Function ini akan di-implementasi di auth.js
+  // Butuh akses ke Firebase database
+  if (typeof window.writeRelayCommand === 'function') {
+    await window.writeRelayCommand(relayName, status);
+  } else {
+    throw new Error('Firebase belum siap. Coba login ulang.');
+  }
+}
+
 window.resetDashboard = resetDashboard;
 window.startMonitoring = startMonitoring;
 window.stopMonitoring = stopMonitoring;
 window.applyReadingFromFirebase = applyReadingFromFirebase;
 window.setAwaitingSensor = setAwaitingSensor;
+window.toggleRelayButton = toggleRelayButton;
+window.setStatus = setStatus;
+window.nextPage = nextPage;
+window.prevPage = prevPage;
+window.downloadCSV = downloadCSV;

@@ -132,25 +132,27 @@
         </div>
       </div>
 
-      <!-- STATUS -->
-      <div class="status-box">
-        <div
-          id="heater"
-          class="status"
-        >
-          Heater
-        </div>
-        <div
-          id="intake"
-          class="status"
-        >
-          Intake
-        </div>
-        <div
-          id="exhaust"
-          class="status"
-        >
-          Exhaust
+      <!-- STATUS & CONTROL -->
+      <div class="control-section">
+        <h3>Kontrol Relay</h3>
+        <div class="control-grid">
+          <!-- HEATER -->
+          <div class="relay-card">
+            <div id="heater" class="status">Heater</div>
+            <button onclick="toggleRelayButton('heater')" class="btn btn-toggle">TOGGLE</button>
+          </div>
+
+          <!-- INTAKE -->
+          <div class="relay-card">
+            <div id="intake" class="status">Intake</div>
+            <button onclick="toggleRelayButton('intake')" class="btn btn-toggle">TOGGLE</button>
+          </div>
+
+          <!-- EXHAUST -->
+          <div class="relay-card">
+            <div id="exhaust" class="status">Exhaust</div>
+            <button onclick="toggleRelayButton('exhaust')" class="btn btn-toggle">TOGGLE</button>
+          </div>
         </div>
       </div>
 
