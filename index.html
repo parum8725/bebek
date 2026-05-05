@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Dashboard Mikroklimat DOD</title>
+    <link
+      rel="stylesheet"
+      href="style.css"
+    />
+  </head>
+  <body>
+    <div class="header header-bar">
+      <span class="header-title">Mikroklimat DOD — Masuk atau Daftar 🐤</span>
+      <button
+        type="button"
+        id="btn-logout"
+        class="btn btn-header hidden"
+      >
+        Keluar
+      </button>
+    </div>
+
+    <div
+      id="auth-screen"
+      class="auth-wrap"
+    >
+      <div class="card auth-card">
+        <h2 id="auth-title">Daftar</h2>
+        <p
+          id="auth-error"
+          class="auth-error hidden"
+          role="alert"
+        ></p>
+        <label
+          class="auth-label"
+          for="auth-email"
+          >Email</label
+        >
+        <input
+          type="email"
+          id="auth-email"
+          class="auth-input"
+          autocomplete="email"
+          placeholder="nama@email.com"
+        />
+        <label
+          class="auth-label"
+          for="auth-password"
+          >Password</label
+        >
+        <input
+          type="password"
+          id="auth-password"
+          class="auth-input"
+          autocomplete="new-password"
+          placeholder="Minimal 6 karakter"
+        />
+        <button
+          type="button"
+          id="auth-submit"
+          class="btn btn-block"
+        >
+          Daftar
+        </button>
+        <p class="auth-divider"><span>atau</span></p>
+        <button
+          type="button"
+          id="auth-google"
+          class="btn btn-block btn-google"
+        >
+          Lanjut dengan Google
+        </button>
+        <p class="auth-switch">
+          <button
+            type="button"
+            id="auth-toggle"
+            class="auth-link"
+          >
+            Sudah punya akun? Masuk
+          </button>
+        </p>
+      </div>
+    </div>
+
+    <div
+      id="dashboard-app"
+      class="hidden"
+    >
+    <div class="container">
+      <div
+        id="sensor-waiting"
+        class="sensor-wait hidden"
+        role="status"
+      >
+        <strong>Menunggu data alat</strong>
+        <p>
+          Dashboard ini hanya menampilkan data dari <strong>Realtime Database</strong>
+          (path <code>readings/latest</code>). Saat hardware terhubung dan mulai
+          mengirim nilai, angka di kartu, tabel, dan grafik akan terisi otomatis.
+        </p>
+      </div>
+      <!-- DASHBOARD -->
+      <div class="grid">
+        <div class="card">
+          <h3>Suhu</h3>
+          <div
+            id="suhu"
+            class="value"
+          >
+            -
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Kelembapan</h3>
+          <div
+            id="kelembapan"
+            class="value"
+          >
+            -
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Amonia</h3>
+          <div
+            id="amonia"
+            class="value"
+          >
+            -
+          </div>
+        </div>
+      </div>
+
+      <!-- STATUS -->
+      <div class="status-box">
+        <div
+          id="heater"
+          class="status"
+        >
+          Heater
+        </div>
+        <div
+          id="intake"
+          class="status"
+        >
+          Intake
+        </div>
+        <div
+          id="exhaust"
+          class="status"
+        >
+          Exhaust
+        </div>
+      </div>
+
+      <!-- DATA HISTORI -->
+      <div class="card">
+        <div class="table-header">
+          <h2>Data Historis</h2>
+          <button
+            onclick="downloadCSV()"
+            class="btn"
+          >
+            Download Data
+          </button>
+        </div>
+
+        <div class="table-info">
+          <span id="infoData">0–0 dari 0 baris</span>
+
+          <div class="pagination">
+            <button onclick="prevPage()">Prev</button>
+            <span id="pageInfo">1 / 1</span>
+            <button onclick="nextPage()">Next</button>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table id="dataTable">
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>Tanggal</th>
+                <th>Jam</th>
+                <th>Suhu</th>
+                <th>Kelembapan</th>
+                <th>Amonia</th>
+                <th>Heater</th>
+                <th>Intake</th>
+                <th>Exhaust</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- GRAFIK -->
+      <div class="card">
+        <h2>Grafik Monitoring</h2>
+
+        <div class="chart-grid">
+          <div class="chart-box">
+            <canvas id="chartSuhuKelembapan"></canvas>
+          </div>
+
+          <div class="chart-box">
+            <canvas id="chartAmonia"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <script src="firebase-config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="script.js"></script>
+    <script
+      type="module"
+      src="auth.js"
+    ></script>
+  </body>
+</html>

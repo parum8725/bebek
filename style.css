@@ -1,0 +1,316 @@
+body {
+  font-family: 'Segoe UI', sans-serif;
+  margin: 0;
+  background: #f4f7fb;
+}
+
+.header {
+  background: linear-gradient(90deg, #2ecc71, #3498db);
+  color: white;
+  padding: 20px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.header-title {
+  flex: 1;
+  text-align: center;
+  min-width: 200px;
+}
+
+.btn-header {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.25);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.btn-header:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* AUTH */
+.auth-wrap {
+  max-width: 420px;
+  margin: 40px auto;
+  padding: 0 20px;
+}
+
+.auth-card {
+  text-align: left;
+}
+
+.auth-card h2 {
+  margin-top: 0;
+  text-align: center;
+}
+
+.auth-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 12px;
+  margin-bottom: 6px;
+  color: #333;
+}
+
+.auth-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+.auth-input:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+.btn-block {
+  width: 100%;
+  margin-top: 20px;
+  padding: 12px;
+  font-size: 16px;
+}
+
+.auth-switch {
+  text-align: center;
+  margin-top: 16px;
+  margin-bottom: 0;
+}
+
+.auth-link {
+  background: none;
+  border: none;
+  color: #3498db;
+  cursor: pointer;
+  font-size: 14px;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.auth-link:hover {
+  color: #2ecc71;
+}
+
+.auth-error {
+  background: #f8d7da;
+  color: #721c24;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin: 0 0 8px 0;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 18px 0 12px;
+  color: #888;
+  font-size: 13px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid #ddd;
+}
+
+.auth-divider span {
+  padding: 0 12px;
+}
+
+.btn-google {
+  background: #fff;
+  color: #3c4043;
+  border: 1px solid #dadce0;
+}
+
+.btn-google:hover:not(:disabled) {
+  background: #f8f9fa;
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.15);
+}
+
+.btn-google:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.container {
+  padding: 20px;
+}
+
+.sensor-wait {
+  background: #e8f4fc;
+  border: 1px solid #3498db;
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #2c3e50;
+}
+
+.sensor-wait strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #1a5276;
+}
+
+.sensor-wait p {
+  margin: 0;
+}
+
+.sensor-wait code {
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* GRID */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+}
+
+/* CARD */
+.card {
+  background: white;
+  padding: 20px;
+  border-radius: 15px;
+  text-align: center;
+}
+
+/* WARNA KONDISI */
+.normal {
+  background: #d4edda;
+}
+.danger {
+  background: #f8d7da;
+}
+
+.value {
+  font-size: 28px;
+  font-weight: bold;
+}
+
+/* STATUS */
+.status-box {
+  display: flex;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.status {
+  flex: 1;
+  padding: 15px;
+  text-align: center;
+  border-radius: 10px;
+  color: white;
+  font-weight: bold;
+}
+
+.on {
+  background: #2ecc71;
+}
+.off {
+  background: #e74c3c;
+}
+
+/* HEADER TABEL */
+.table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* INFO + PAGINATION */
+.table-info {
+  display: flex;
+  justify-content: space-between;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+/* PAGINATION */
+.pagination button {
+  padding: 5px 10px;
+  border: none;
+  background: #ddd;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+/* TABEL */
+.table-container {
+  max-height: 300px;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  background: #3498db;
+  color: white;
+  padding: 10px;
+}
+
+td {
+  padding: 10px;
+  text-align: center;
+}
+
+tr:nth-child(even) {
+  background: #f2f2f2;
+}
+
+/* BUTTON */
+.btn {
+  background: #2ecc71;
+  color: white;
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* GRAFIK */
+.chart-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.chart-box {
+  height: 250px;
+}
+
+canvas {
+  background: white;
+  border-radius: 10px;
+}
