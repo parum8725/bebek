@@ -132,26 +132,26 @@
         </div>
       </div>
 
-      <!-- STATUS & CONTROL -->
+      <!-- STATUS (READ-ONLY) -->
       <div class="control-section">
-        <h3>Kontrol Relay</h3>
+        <h3>Status Relay (Otomatis)</h3>
         <div class="control-grid">
-          <!-- HEATER -->
-          <div class="relay-card">
-            <div id="heater" class="status">Heater</div>
-            <button onclick="toggleRelayButton('heater')" class="btn btn-toggle">TOGGLE</button>
+          <!-- HEATER STATUS -->
+          <div class="relay-card relay-off">
+            <span class="relay-label">Heater</span>
+            <div id="heater" class="status off">OFF</div>
           </div>
 
-          <!-- INTAKE -->
-          <div class="relay-card">
-            <div id="intake" class="status">Intake</div>
-            <button onclick="toggleRelayButton('intake')" class="btn btn-toggle">TOGGLE</button>
+          <!-- INTAKE STATUS -->
+          <div class="relay-card relay-off">
+            <span class="relay-label">Intake</span>
+            <div id="intake" class="status off">OFF</div>
           </div>
 
-          <!-- EXHAUST -->
-          <div class="relay-card">
-            <div id="exhaust" class="status">Exhaust</div>
-            <button onclick="toggleRelayButton('exhaust')" class="btn btn-toggle">TOGGLE</button>
+          <!-- EXHAUST STATUS -->
+          <div class="relay-card relay-off">
+            <span class="relay-label">Exhaust</span>
+            <div id="exhaust" class="status off">OFF</div>
           </div>
         </div>
       </div>
@@ -215,12 +215,19 @@
     </div>
     </div>
 
-    <script src="firebase-config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="script.js"></script>
-    <script
-      type="module"
-      src="auth.js"
-    ></script>
+    <script>
+      window.__firebaseConfig = {
+        apiKey: 'AIzaSyAiUdBLlfaemZ_aTytRiuHbvUurAGHnOgk',
+        authDomain: 'mikroklimat-dod.firebaseapp.com',
+        databaseURL: 'https://mikroklimat-dod-default-rtdb.asia-southeast1.firebasedatabase.app',
+        projectId: 'mikroklimat-dod',
+        storageBucket: 'mikroklimat-dod.firebasestorage.app',
+        messagingSenderId: '1020423643943',
+        appId: '1:1020423643943:web:9fe4e849643821c5c87f02',
+        measurementId: 'G-F55GHD73DH',
+      };
+    </script>
+    <script type="module" src="auth.js"></script>
   </body>
 </html>

@@ -1,3 +1,4 @@
+import './script.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {
   getAnalytics,
@@ -14,9 +15,31 @@ import {
   setPersistence,
   inMemoryPersistence,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { getDatabase, ref, onValue, set, get } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
+import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  query,
+  where,
+  orderBy,
+  getDocs,
+  limit,
+  Timestamp,
+} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 
-const cfg = window.__firebaseConfig;
+// Firebase config
+const cfg = window.__firebaseConfig || {
+  apiKey: 'AIzaSyAiUdBLlfaemZ_aTytRiuHbvUurAGHnOgk',
+  authDomain: 'mikroklimat-dod.firebaseapp.com',
+  databaseURL: 'https://mikroklimat-dod-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId: 'mikroklimat-dod',
+  storageBucket: 'mikroklimat-dod.firebasestorage.app',
+  messagingSenderId: '1020423643943',
+  appId: '1:1020423643943:web:9fe4e849643821c5c87f02',
+  measurementId: 'G-F55GHD73DH',
+};
+
 const isPlaceholder =
   !cfg ||
   !cfg.apiKey ||
@@ -42,6 +65,8 @@ let auth = null;
 let firebaseApp = null;
 let rtdbUnsubscribe = null;
 let controlUnsubscribe = null;
+let lastRelayStatus = { heater: 'OFF', intake: 'OFF', exhaust: 'OFF' };
+let currentUserId = null;
 
 function detachRtdb() {
   if (rtdbUnsubscribe) {
@@ -57,34 +82,91 @@ function detachControl() {
   }
 }
 
+async function saveDataToFirestore(app, userId, sensorData, relayStatus) {
+  try {
+    const db = getFirestore(app);
+    const monitoringCollection = collection(db, 'monitoring');
+
+    const docData = {
+      userId,
+      timestamp: Timestamp.now(),
+      suhu: parseFloat(sensorData.suhu) || 0,
+      kelembapan: parseFloat(sensorData.kelembapan) || 0,
+      amonia: parseFloat(sensorData.amonia) || 0,
+      heater: relayStatus.heater || 'OFF',
+      intake: relayStatus.intake || 'OFF',
+      exhaust: relayStatus.exhaust || 'OFF',
+    };
+
+    await addDoc(monitoringCollection, docData);
+    console.log('✅ Data saved to Firestore');
+  } catch (error) {
+    console.error('❌ Error saving to Firestore:', error);
+  }
+}
+
+async function loadHistoryFromFirestore(app, userId) {
+  try {
+    const db = getFirestore(app);
+    const monitoringCollection = collection(db, 'monitoring');
+
+    const q = query(
+      monitoringCollection,
+      where('userId', '==', userId),
+      orderBy('timestamp', 'desc'),
+      limit(100)
+    );
+
+    const querySnapshot = await getDocs(q);
+    const docs = [];
+
+    querySnapshot.forEach((doc) => {
+      docs.push({
+        id: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    console.log('📥 Loaded', docs.length, 'documents from Firestore');
+    if (typeof window.loadHistoryFromFirestore === 'function') {
+      window.loadHistoryFromFirestore(docs);
+    }
+  } catch (error) {
+    console.error('❌ Error loading from Firestore:', error);
+  }
+}
+
 function attachControl(app) {
   detachControl();
   const db = getDatabase(app);
-  const controlRef = ref(db, 'control');
+  const statusRef = ref(db, 'status');
 
-  console.log('🔗 Mendengarkan control commands dari:', 'control');
+  console.log('🔗 Mendengarkan relay status dari:', 'status');
 
-  controlUnsubscribe = onValue(controlRef, (snap) => {
+  controlUnsubscribe = onValue(statusRef, (snap) => {
     const v = snap.val();
-    console.log('📡 Control state dari Firebase:', v);
+    console.log('📡 Relay status dari Firebase:', v);
 
-    if (v && typeof window.setStatus === 'function') {
-      // Update SEMUA relay status, tidak peduli null atau tidak
+    if (v) {
       const heaterStatus = v.heater || 'OFF';
       const intakeStatus = v.intake || 'OFF';
       const exhaustStatus = v.exhaust || 'OFF';
 
-      console.log('🔥 Update Heater:', heaterStatus);
-      window.setStatus('heater', heaterStatus);
+      lastRelayStatus = { heater: heaterStatus, intake: intakeStatus, exhaust: exhaustStatus };
 
-      console.log('💨 Update Intake:', intakeStatus);
-      window.setStatus('intake', intakeStatus);
+      if (typeof window.setStatus === 'function') {
+        console.log('🔥 Update Heater:', heaterStatus);
+        window.setStatus('heater', heaterStatus);
 
-      console.log('💨 Update Exhaust:', exhaustStatus);
-      window.setStatus('exhaust', exhaustStatus);
+        console.log('💨 Update Intake:', intakeStatus);
+        window.setStatus('intake', intakeStatus);
+
+        console.log('💨 Update Exhaust:', exhaustStatus);
+        window.setStatus('exhaust', exhaustStatus);
+      }
     }
   }, (error) => {
-    console.error('❌ Error membaca control:', error);
+    console.error('❌ Error membaca status:', error);
   });
 }
 
@@ -111,6 +193,14 @@ function attachRtdb(app) {
     if (v && typeof window.applyReadingFromFirebase === 'function') {
       console.log('✅ Menampilkan data ke dashboard');
       window.applyReadingFromFirebase(v);
+
+      if (currentUserId) {
+        saveDataToFirestore(app, currentUserId, {
+          suhu: v.suhu,
+          kelembapan: v.kelembapan,
+          amonia: v.gasAnalog,
+        }, lastRelayStatus);
+      }
     } else if (typeof window.setAwaitingSensor === 'function') {
       console.log('⏳ Menunggu data sensor...');
       window.setAwaitingSensor(true);
@@ -254,24 +344,6 @@ elLogout.addEventListener('click', async () => {
   }
 });
 
-async function writeRelayCommand(relayName, status) {
-  if (!firebaseApp) {
-    throw new Error('Firebase belum initialize');
-  }
-
-  const db = getDatabase(firebaseApp);
-  const commandRef = ref(db, `control/${relayName}`);
-
-  console.log(`📤 Mengirim: control/${relayName} = ${status}`);
-
-  try {
-    await set(commandRef, status);
-    console.log(`✅ Berhasil kirim: ${relayName} = ${status}`);
-  } catch (error) {
-    console.error(`❌ Error kirim command:`, error);
-    throw error;
-  }
-}
 
 [elEmail, elPassword].forEach((el) => {
   el.addEventListener('keydown', (e) => {
@@ -311,15 +383,18 @@ async function boot() {
       const uid = user.uid;
       if (uid !== lastUid) {
         lastUid = uid;
+        currentUserId = uid;
         showDashboardView();
         if (typeof window.resetDashboard === 'function') window.resetDashboard();
         attachRtdb(firebaseApp);
         attachControl(firebaseApp);
+        loadHistoryFromFirestore(firebaseApp, uid);
         if (typeof window.startMonitoring === 'function') window.startMonitoring();
       }
     } else {
       console.log('👤 User logout');
       lastUid = null;
+      currentUserId = null;
       detachRtdb();
       detachControl();
       if (typeof window.stopMonitoring === 'function') window.stopMonitoring();
@@ -328,7 +403,5 @@ async function boot() {
     }
   });
 }
-
-window.writeRelayCommand = writeRelayCommand;
 
 boot().catch(console.error);

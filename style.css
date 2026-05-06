@@ -223,9 +223,61 @@ body {
   margin-top: 20px;
 }
 
+.mode-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #e0e0e0;
+}
+
 .control-section h3 {
-  margin-top: 0;
+  margin: 0 0 20px 0;
   color: #2c3e50;
+  font-size: 18px;
+}
+
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#modeLabel {
+  font-size: 14px;
+  color: #555;
+}
+
+#modeLabel strong {
+  color: #2980b9;
+  font-weight: 700;
+}
+
+.btn-mode {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f39c12;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.btn-mode:hover:not(:disabled) {
+  background: #e67e22;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(243, 156, 18, 0.3);
+}
+
+.btn-mode:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* CONTROL GRID */
@@ -244,29 +296,54 @@ body {
   padding: 15px;
   background: #f8f9fa;
   border-radius: 12px;
-  border: 1px solid #e0e0e0;
+  border: 2px solid #e0e0e0;
+  transition: all 0.3s ease;
+}
+
+.relay-card.relay-on {
+  background: #d4edda;
+  border-color: #28a745;
+  box-shadow: 0 0 15px rgba(40, 167, 69, 0.2);
+}
+
+.relay-card.relay-off {
+  background: #f8d7da;
+  border-color: #dc3545;
+  box-shadow: 0 0 15px rgba(220, 53, 69, 0.2);
+}
+
+.relay-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: center;
 }
 
 .status {
-  padding: 12px;
+  padding: 16px 12px;
   text-align: center;
-  border-radius: 8px;
+  border-radius: 10px;
   color: white;
   font-weight: bold;
-  min-height: 35px;
+  min-height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 18px;
+  letter-spacing: 1px;
+  transition: all 0.3s ease;
 }
 
 .on {
-  background: #2ecc71;
-  box-shadow: 0 0 10px rgba(46, 204, 113, 0.3);
+  background: #28a745;
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
 }
+
 .off {
-  background: #e74c3c;
-  box-shadow: 0 0 10px rgba(231, 76, 60, 0.3);
+  background: #dc3545;
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
 }
 
 /* BUTTON TOGGLE */
@@ -412,22 +489,28 @@ tr:hover {
 
 /* RELAY CELLS */
 .relay-cell {
-  font-weight: 600;
-  padding: 8px;
-  border-radius: 6px;
-  min-width: 60px;
+  font-weight: 700;
+  padding: 10px 8px;
+  border-radius: 8px;
+  min-width: 70px;
+  text-align: center;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-size: 13px;
 }
 
-.relay-on {
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
+.relay-cell.relay-on {
+  background: #28a745;
+  color: white;
+  border: 2px solid #1e7e34;
+  box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
 }
 
-.relay-off {
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
+.relay-cell.relay-off {
+  background: #dc3545;
+  color: white;
+  border: 2px solid #c82333;
+  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
 }
 
 /* BUTTON */

@@ -6,10 +6,14 @@ let amoniaData = [];
 let dataLog = [];
 let monitoringActive = false;
 let lastAppliedReadingKey = null;
+let relayStatus = { heater: 'OFF', intake: 'OFF', exhaust: 'OFF' };
 
 /* PAGINATION */
 let currentPage = 1;
 const ROWS_PER_PAGE = 10;
+
+/* AUTO MODE ONLY */
+let lastSensorData = null;
 
 /* CHART 1: SUHU + KELEMBAPAN */
 let chart1 = new Chart(document.getElementById('chartSuhuKelembapan'), {
@@ -139,7 +143,10 @@ function applyReadingFromFirebase(v) {
 
   setAwaitingSensor(false);
 
-  const { suhu, kelembapan, amonia, heater, intake, exhaust } = n;
+  const { suhu, kelembapan, amonia } = n;
+
+  // Save sensor data
+  lastSensorData = { suhu, kelembapan, amonia };
 
   document.getElementById('suhu').innerText = suhu + '°C';
   document.getElementById('kelembapan').innerText = kelembapan + '%';
@@ -149,13 +156,8 @@ function applyReadingFromFirebase(v) {
   setColor('kelembapan', kelembapan, 60, 70);
   setAmoniaColor('amonia', amonia);
 
-  // ⚠️ JANGAN update relay status dari /sensor data
-  // Relay status hanya diupdate dari /control listener di auth.js
-  // setStatus('heater', heater);
-  // setStatus('intake', intake);
-  // setStatus('exhaust', exhaust);
-
-  addTable(suhu, kelembapan, amonia, heater, intake, exhaust, ts);
+  // Use current relay status from global variable
+  addTable(suhu, kelembapan, amonia, relayStatus.heater, relayStatus.intake, relayStatus.exhaust, ts);
 
   const chartTime = new Date(ts).toLocaleTimeString();
   labels.push(chartTime);
@@ -204,8 +206,20 @@ function setAmoniaColor(id, value) {
 /* STATUS */
 function setStatus(id, status) {
   let el = document.getElementById(id);
-  el.innerText = id.toUpperCase() + ': ' + status;
+  el.innerText = status;
   el.className = 'status ' + (status === 'ON' ? 'on' : 'off');
+
+  // Track relay status globally
+  if (id === 'heater') relayStatus.heater = status;
+  if (id === 'intake') relayStatus.intake = status;
+  if (id === 'exhaust') relayStatus.exhaust = status;
+
+  // Update card background color
+  let card = el.closest('.relay-card');
+  if (card) {
+    card.classList.remove('relay-on', 'relay-off');
+    card.classList.add(status === 'ON' ? 'relay-on' : 'relay-off');
+  }
 }
 
 /* TABEL HISTORI (🔥 FIX: DATA TERBARU DI ATAS) */
@@ -349,10 +363,6 @@ function resetDashboard() {
     card.classList.remove('normal', 'danger');
   });
 
-  setStatus('heater', 'OFF');
-  setStatus('intake', 'OFF');
-  setStatus('exhaust', 'OFF');
-
   // Reset pagination
   currentPage = 1;
   updateTablePagination();
@@ -371,48 +381,44 @@ function stopMonitoring() {
   monitoringActive = false;
 }
 
-function toggleRelayButton(relayName) {
-  const btn = event.target;
-  btn.disabled = true;
+function loadHistoryFromFirestore(docs) {
+  console.log('📥 Loading', docs.length, 'documents dari Firestore');
 
-  // Ambil status sekarang dari element
-  const statusEl = document.getElementById(relayName);
-  const isCurrentlyOn = statusEl.classList.contains('on');
-  const newStatus = isCurrentlyOn ? 'OFF' : 'ON';
-
-  console.log(`🔄 Toggle ${relayName}: ${isCurrentlyOn ? 'ON' : 'OFF'} → ${newStatus}`);
-
-  // Kirim command ke Firebase
-  sendRelayCommand(relayName, newStatus)
-    .then(() => {
-      console.log(`✅ Command ${relayName} = ${newStatus} berhasil dikirim`);
-    })
-    .catch((error) => {
-      console.error(`❌ Error mengirim command ${relayName}:`, error);
-      alert(`Gagal mengirim command: ${error.message}`);
-    })
-    .finally(() => {
-      btn.disabled = false;
-    });
-}
-
-async function sendRelayCommand(relayName, status) {
-  // Function ini akan di-implementasi di auth.js
-  // Butuh akses ke Firebase database
-  if (typeof window.writeRelayCommand === 'function') {
-    await window.writeRelayCommand(relayName, status);
-  } else {
-    throw new Error('Firebase belum siap. Coba login ulang.');
+  let table = document.getElementById('dataTable');
+  while (table.rows.length > 1) {
+    table.deleteRow(1);
   }
+
+  dataLog.length = 0;
+  labels.length = 0;
+  suhuData.length = 0;
+  kelembapanData.length = 0;
+  amoniaData.length = 0;
+
+  docs.forEach((doc) => {
+    const data = doc.data ? doc : doc;
+    const ts = data.timestamp?.toMillis ? data.timestamp.toMillis() : new Date(data.timestamp).getTime();
+
+    addTable(data.suhu, data.kelembapan, data.amonia, data.heater, data.intake, data.exhaust, ts);
+  });
+
+  updateTablePagination();
+  chart1.update();
+  chart2.update();
+
+  console.log('✅ History loaded dan ditampilkan');
 }
+
+
+
 
 window.resetDashboard = resetDashboard;
 window.startMonitoring = startMonitoring;
 window.stopMonitoring = stopMonitoring;
 window.applyReadingFromFirebase = applyReadingFromFirebase;
 window.setAwaitingSensor = setAwaitingSensor;
-window.toggleRelayButton = toggleRelayButton;
 window.setStatus = setStatus;
 window.nextPage = nextPage;
 window.prevPage = prevPage;
 window.downloadCSV = downloadCSV;
+window.loadHistoryFromFirestore = loadHistoryFromFirestore;
