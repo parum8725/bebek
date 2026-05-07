@@ -274,8 +274,8 @@ function addTable(suhu, kelembapan, amonia, heater, intake, exhaust, rowTs, skip
   const tanggal = t.toLocaleDateString('id-ID');
   const jam = t.toLocaleTimeString('id-ID');
 
-  const table = document.getElementById('dataTable');
-  const row = table.insertRow(1); // selalu masuk ke posisi 1 (di bawah header)
+  const tbody = document.getElementById('tableBody');
+  const row = tbody.insertRow(0); // explicit ke tbody, posisi 0 = teratas
 
   row.insertCell(0); // nomor — diisi updateNumbering()
   row.insertCell(1).innerText = tanggal;
@@ -300,7 +300,6 @@ function addTable(suhu, kelembapan, amonia, heater, intake, exhaust, rowTs, skip
   cellExhaust.innerText = exhaustVal;
   cellExhaust.className = 'relay-cell ' + (exhaustVal === 'ON' ? 'relay-on' : 'relay-off');
 
-  // Simpan lengkap dengan tanggal & jam untuk CSV
   dataLog.unshift({ tanggal, jam, suhu: suhu ?? '-', kelembapan: kelembapan ?? '-', amonia: amonia ?? '-', heater: heaterVal, intake: intakeVal, exhaust: exhaustVal });
 
   if (!skipUpdate) {
@@ -311,56 +310,44 @@ function addTable(suhu, kelembapan, amonia, heater, intake, exhaust, rowTs, skip
 
 /* NOMOR OTOMATIS */
 function updateNumbering() {
-  let table = document.getElementById('dataTable');
-
-  for (let i = 1; i < table.rows.length; i++) {
-    table.rows[i].cells[0].innerText = i;
+  const tbody = document.getElementById('tableBody');
+  for (let i = 0; i < tbody.rows.length; i++) {
+    tbody.rows[i].cells[0].innerText = i + 1;
   }
 }
 
 /* PAGINATION */
 function updateTablePagination() {
-  let table = document.getElementById('dataTable');
-  let tbody = document.getElementById('tableBody');
+  const tbody = document.getElementById('tableBody');
+  const totalRows  = tbody.rows.length;
+  const totalPages = totalRows === 0 ? 1 : Math.ceil(totalRows / ROWS_PER_PAGE);
 
-  const totalRows = tbody.rows.length;
-  const totalPages = Math.ceil(totalRows / ROWS_PER_PAGE);
+  // Clamp halaman
+  if (currentPage < 1) currentPage = 1;
+  if (currentPage > totalPages) currentPage = totalPages;
 
-  // Validasi halaman
-  if (currentPage > totalPages && totalPages > 0) {
-    currentPage = totalPages;
-  } else if (currentPage < 1) {
-    currentPage = 1;
-  }
-
-  // Hitung range data yang ditampilkan
   const startIdx = (currentPage - 1) * ROWS_PER_PAGE;
-  const endIdx = startIdx + ROWS_PER_PAGE;
+  const endIdx   = startIdx + ROWS_PER_PAGE;
 
-  // Sembunyikan semua baris, tampilkan hanya yang di page ini
-  const allRows = tbody.querySelectorAll('tr');
-  allRows.forEach((row, idx) => {
-    row.style.display = idx >= startIdx && idx < endIdx ? '' : 'none';
+  // Tampilkan hanya baris di halaman ini
+  Array.from(tbody.rows).forEach((row, idx) => {
+    row.style.display = (idx >= startIdx && idx < endIdx) ? '' : 'none';
   });
 
-  // Update info
+  // Info baris
   const startNo = totalRows > 0 ? startIdx + 1 : 0;
-  const endNo = Math.min(endIdx, totalRows);
+  const endNo   = Math.min(endIdx, totalRows);
   document.getElementById('infoData').innerText =
-    totalRows === 0 ? '0–0 dari 0 baris' : `${startNo}–${endNo} dari ${totalRows} baris`;
+    totalRows === 0 ? 'Belum ada data' : `${startNo}–${endNo} dari ${totalRows} baris`;
 
-  // Update page info
-  document.getElementById('pageInfo').innerText =
-    totalPages === 0 ? '0 / 0' : `${currentPage} / ${totalPages}`;
+  // Info halaman
+  document.getElementById('pageInfo').innerText = `${currentPage} / ${totalPages}`;
 
-  // Disable/enable buttons
-  document.querySelectorAll('.pagination button').forEach(btn => {
-    if (btn.textContent === 'Prev') {
-      btn.disabled = currentPage <= 1;
-    } else if (btn.textContent === 'Next') {
-      btn.disabled = currentPage >= totalPages;
-    }
-  });
+  // Tombol Prev / Next
+  const prevBtn = document.querySelector('.pagination button:first-child');
+  const nextBtn = document.querySelector('.pagination button:last-child');
+  if (prevBtn) prevBtn.disabled = currentPage <= 1;
+  if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
 }
 
 function nextPage() {
@@ -506,10 +493,8 @@ function resetDashboard() {
   historyLoading = false;
   setAwaitingSensor(true);
 
-  let table = document.getElementById('dataTable');
-  while (table.rows.length > 1) {
-    table.deleteRow(1);
-  }
+  const tbody = document.getElementById('tableBody');
+  while (tbody.rows.length > 0) tbody.deleteRow(0);
 
   dataLog.length = 0;
   labels.length = 0;
@@ -547,8 +532,8 @@ function stopMonitoring() {
 function loadHistoryFromFirestore(docs) {
   historyLoading = true;
 
-  const table = document.getElementById('dataTable');
-  while (table.rows.length > 1) table.deleteRow(1);
+  const tbody = document.getElementById('tableBody');
+  while (tbody.rows.length > 0) tbody.deleteRow(0);
 
   dataLog.length = 0;
   labels.length = 0;

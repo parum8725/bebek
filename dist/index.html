@@ -2,82 +2,14 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <title>Dashboard Mikroklimat DOD</title>
-    <script type="module" crossorigin src="/assets/index-Cn579vgg.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-Ed_etXdQ.css">
+    <title>Dashboard Mikroklimat DOD</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐤</text></svg>" />
+    <script type="module" crossorigin src="/assets/index-BwzhGIb3.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BaR-CZTe.css">
   </head>
   <body>
     <div class="header header-bar">
-      <span class="header-title">Mikroklimat DOD — Masuk atau Daftar 🐤</span>
-      <button
-        type="button"
-        id="btn-logout"
-        class="btn btn-header hidden"
-      >
-        Keluar
-      </button>
-    </div>
-
-    <div
-      id="auth-screen"
-      class="auth-wrap"
-    >
-      <div class="card auth-card">
-        <h2 id="auth-title">Daftar</h2>
-        <p
-          id="auth-error"
-          class="auth-error hidden"
-          role="alert"
-        ></p>
-        <label
-          class="auth-label"
-          for="auth-email"
-          >Email</label
-        >
-        <input
-          type="email"
-          id="auth-email"
-          class="auth-input"
-          autocomplete="email"
-          placeholder="nama@email.com"
-        />
-        <label
-          class="auth-label"
-          for="auth-password"
-          >Password</label
-        >
-        <input
-          type="password"
-          id="auth-password"
-          class="auth-input"
-          autocomplete="new-password"
-          placeholder="Minimal 6 karakter"
-        />
-        <button
-          type="button"
-          id="auth-submit"
-          class="btn btn-block"
-        >
-          Daftar
-        </button>
-        <p class="auth-divider"><span>atau</span></p>
-        <button
-          type="button"
-          id="auth-google"
-          class="btn btn-block btn-google"
-        >
-          Lanjut dengan Google
-        </button>
-        <p class="auth-switch">
-          <button
-            type="button"
-            id="auth-toggle"
-            class="auth-link"
-          >
-            Sudah punya akun? Masuk
-          </button>
-        </p>
-      </div>
+      <span class="header-title">Dashboard Monitoring Mikroklimat DOD 🐤</span>
     </div>
 
     <div
@@ -130,26 +62,35 @@
         </div>
       </div>
 
-      <!-- STATUS (READ-ONLY) -->
+      <!-- STATUS + KONTROL RELAY -->
       <div class="control-section">
-        <h3>Status Relay (Otomatis)</h3>
+        <div class="mode-header">
+          <h3 style="margin:0">Status Relay</h3>
+          <div class="mode-toggle">
+            <span id="modeLabel">Mode: <strong>OTOMATIS</strong></span>
+            <button id="btn-mode-toggle" class="btn-mode" onclick="toggleMode()">Ganti ke Manual</button>
+          </div>
+        </div>
         <div class="control-grid">
-          <!-- HEATER STATUS -->
+          <!-- HEATER -->
           <div class="relay-card relay-off">
             <span class="relay-label">Heater</span>
             <div id="heater" class="status off">OFF</div>
+            <button class="btn-toggle hidden" id="btn-heater" onclick="toggleRelay('heater')">Nyalakan</button>
           </div>
 
-          <!-- INTAKE STATUS -->
+          <!-- INTAKE -->
           <div class="relay-card relay-off">
             <span class="relay-label">Intake</span>
             <div id="intake" class="status off">OFF</div>
+            <button class="btn-toggle hidden" id="btn-intake" onclick="toggleRelay('intake')">Nyalakan</button>
           </div>
 
-          <!-- EXHAUST STATUS -->
+          <!-- EXHAUST -->
           <div class="relay-card relay-off">
             <span class="relay-label">Exhaust</span>
             <div id="exhaust" class="status off">OFF</div>
+            <button class="btn-toggle hidden" id="btn-exhaust" onclick="toggleRelay('exhaust')">Nyalakan</button>
           </div>
         </div>
       </div>
@@ -162,7 +103,7 @@
             onclick="downloadCSV()"
             class="btn"
           >
-            Download Data
+            Download Excel
           </button>
         </div>
 
@@ -214,6 +155,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
     <script>
       window.__firebaseConfig = {
         apiKey: 'AIzaSyAiUdBLlfaemZ_aTytRiuHbvUurAGHnOgk',
@@ -225,6 +167,6 @@
         appId: '1:1020423643943:web:9fe4e849643821c5c87f02',
         measurementId: 'G-F55GHD73DH',
       };
-    </script>
+    </script>
   </body>
 </html>

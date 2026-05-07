@@ -129,9 +129,9 @@ void writeStatus() {
 
 // autoControl: hanya apply jika ada perubahan (hemat write Firebase)
 void autoControl(float suhu, float ppm_nh3) {
-  bool newHeater  = (suhu < 32.0f);
-  bool newIntake  = (suhu > 35.0f) || (ppm_nh3 > 25.0f);
-  bool newExhaust = (suhu > 35.0f) || (ppm_nh3 > 25.0f);
+  bool newHeater  = (suhu < 32.0f);   // ON jika suhu < 32°C
+  bool newIntake  = (suhu > 35.0f);   // ON jika suhu > 35°C
+  bool newExhaust = (ppm_nh3 > 25.0f); // ON jika amonia > 25 ppm
 
   if (newHeater != (bool)heater || newIntake != (bool)intake || newExhaust != (bool)exhaust) {
     heater  = newHeater;
