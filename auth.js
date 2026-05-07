@@ -6,16 +6,10 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics.js';
 import {
   getAuth,
-  GoogleAuthProvider,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  signOut,
+  signInAnonymously,
   onAuthStateChanged,
-  setPersistence,
-  inMemoryPersistence,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
+import { getDatabase, ref, onValue, set } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
 import {
   getFirestore,
   collection,
@@ -46,25 +40,14 @@ const isPlaceholder =
   cfg.apiKey === 'GANTI_API_KEY' ||
   String(cfg.apiKey).includes('GANTI');
 
-const elAuth = document.getElementById('auth-screen');
 const elApp = document.getElementById('dashboard-app');
-const elLogout = document.getElementById('btn-logout');
-const elTitle = document.getElementById('auth-title');
-const elError = document.getElementById('auth-error');
-const elEmail = document.getElementById('auth-email');
-const elPassword = document.getElementById('auth-password');
-const elSubmit = document.getElementById('auth-submit');
-const elGoogle = document.getElementById('auth-google');
-const elToggle = document.getElementById('auth-toggle');
 const elHeaderTitle = document.querySelector('.header-title');
 
-const googleProvider = new GoogleAuthProvider();
-
-let mode = 'register';
 let auth = null;
 let firebaseApp = null;
 let rtdbUnsubscribe = null;
 let controlUnsubscribe = null;
+let modeUnsubscribe = null;
 let lastRelayStatus = { heater: 'OFF', intake: 'OFF', exhaust: 'OFF' };
 let currentUserId = null;
 
@@ -81,6 +64,50 @@ function detachControl() {
     controlUnsubscribe = null;
   }
 }
+
+function detachMode() {
+  if (modeUnsubscribe) {
+    modeUnsubscribe();
+    modeUnsubscribe = null;
+  }
+}
+
+function attachMode(app) {
+  detachMode();
+  const db = getDatabase(app);
+  // ESP membaca mode dari /control/mode — samakan path-nya
+  modeUnsubscribe = onValue(ref(db, 'control/mode'), (snap) => {
+    const mode = (snap.val() || 'auto').toLowerCase();
+    if (typeof window.applyModeUI === 'function') window.applyModeUI(mode);
+
+    if (mode === 'manual') {
+      // Lepas listener status/ agar hardware tidak override tampilan relay
+      detachControl();
+    } else {
+      // Sambungkan kembali agar tampilan relay ikut hardware
+      attachControl(app);
+    }
+  });
+}
+
+async function writeMode(mode) {
+  if (!firebaseApp) return;
+  const db = getDatabase(firebaseApp);
+  // ESP baca dari /control/mode — tulis ke path yang sama
+  await set(ref(db, 'control/mode'), mode);
+}
+
+async function writeRelayControl(relayId, value) {
+  if (!firebaseApp) return;
+  const db = getDatabase(firebaseApp);
+  // Hanya tulis ke control/ (dibaca hardware di mode manual)
+  // Tampilan diupdate langsung via setStatus tanpa bergantung status/ di Firebase
+  await set(ref(db, `control/${relayId}`), value);
+  if (typeof window.setStatus === 'function') window.setStatus(relayId, value);
+}
+
+window.writeMode = writeMode;
+window.writeRelayControl = writeRelayControl;
 
 async function saveDataToFirestore(app, userId, sensorData, relayStatus) {
   try {
@@ -105,34 +132,33 @@ async function saveDataToFirestore(app, userId, sensorData, relayStatus) {
   }
 }
 
-async function loadHistoryFromFirestore(app, userId) {
+async function loadHistoryFromFirestore(app, userId, retryCount = 0) {
   try {
     const db = getFirestore(app);
-    const monitoringCollection = collection(db, 'monitoring');
-
     const q = query(
-      monitoringCollection,
+      collection(db, 'monitoring'),
       where('userId', '==', userId),
       orderBy('timestamp', 'desc'),
-      limit(100)
+      limit(200)
     );
 
     const querySnapshot = await getDocs(q);
     const docs = [];
+    querySnapshot.forEach((doc) => docs.push({ id: doc.id, ...doc.data() }));
 
-    querySnapshot.forEach((doc) => {
-      docs.push({
-        id: doc.id,
-        ...doc.data(),
-      });
-    });
-
-    console.log('📥 Loaded', docs.length, 'documents from Firestore');
+    console.log('📥 Loaded', docs.length, 'dokumen dari Firestore');
     if (typeof window.loadHistoryFromFirestore === 'function') {
       window.loadHistoryFromFirestore(docs);
     }
   } catch (error) {
-    console.error('❌ Error loading from Firestore:', error);
+    const isIndexBuilding = error.message?.includes('index') || error.code === 'failed-precondition';
+    if (isIndexBuilding && retryCount < 10) {
+      const delayMs = 30_000; // coba lagi tiap 30 detik
+      console.warn(`⏳ Firestore index masih building, retry ke-${retryCount + 1} dalam 30 detik...`);
+      setTimeout(() => loadHistoryFromFirestore(app, userId, retryCount + 1), delayMs);
+    } else {
+      console.error('❌ Error loading Firestore:', error);
+    }
   }
 }
 
@@ -177,32 +203,29 @@ function attachRtdb(app) {
 
   console.log('🔗 Menghubung ke Firebase Realtime DB:', 'sensor');
 
+  // Throttle Firestore writes: simpan maks 1x per 30 detik (2.880 write/hari — aman di free tier)
+  let lastFirestoreSave = 0;
+  const FIRESTORE_INTERVAL_MS = 30_000;
+
   rtdbUnsubscribe = onValue(sensorRef, (snap) => {
     const v = snap.val();
-    console.log('📨 Data dari Firebase:', v);
-    console.log('📋 Detail struktur:', {
-      suhu: v?.suhu,
-      kelembapan: v?.kelembapan,
-      amonia: v?.amonia,
-      heater: v?.heater,
-      intake: v?.intake,
-      exhaust: v?.exhaust,
-      updatedAt: v?.updatedAt
-    });
+    console.log('📨 Data sensor:', { suhu: v?.suhu, kelembaban: v?.kelembaban, gasAnalog: v?.gasAnalog });
 
     if (v && typeof window.applyReadingFromFirebase === 'function') {
-      console.log('✅ Menampilkan data ke dashboard');
       window.applyReadingFromFirebase(v);
 
-      if (currentUserId) {
+      const now = Date.now();
+      if (currentUserId && now - lastFirestoreSave >= FIRESTORE_INTERVAL_MS) {
+        lastFirestoreSave = now;
+        // Snapshot relay status saat ini — bukan referensi object yang bisa berubah
+        const relaySnapshot = { ...lastRelayStatus };
         saveDataToFirestore(app, currentUserId, {
           suhu: v.suhu,
-          kelembapan: v.kelembapan,
-          amonia: v.gasAnalog,
-        }, lastRelayStatus);
+          kelembapan: v.kelembaban,
+          amonia: v.gas_ppm ?? v.gas,
+        }, relaySnapshot);
       }
     } else if (typeof window.setAwaitingSensor === 'function') {
-      console.log('⏳ Menunggu data sensor...');
       window.setAwaitingSensor(true);
     }
   }, (error) => {
@@ -210,154 +233,16 @@ function attachRtdb(app) {
   });
 }
 
-function showError(msg) {
-  elError.textContent = msg;
-  elError.classList.remove('hidden');
-}
-
-function clearError() {
-  elError.textContent = '';
-  elError.classList.add('hidden');
-}
-
-function mapAuthError(code) {
-  const map = {
-    'auth/email-already-in-use': 'Email sudah terdaftar.',
-    'auth/invalid-email': 'Format email tidak valid.',
-    'auth/weak-password': 'Password minimal 6 karakter.',
-    'auth/user-disabled': 'Akun dinonaktifkan.',
-    'auth/user-not-found': 'Email atau password salah.',
-    'auth/wrong-password': 'Email atau password salah.',
-    'auth/invalid-credential': 'Email atau password salah.',
-    'auth/too-many-requests': 'Terlalu banyak percobaan. Coba lagi nanti.',
-    'auth/network-request-failed': 'Koneksi bermasalah. Periksa internet.',
-    'auth/popup-blocked':
-      'Popup diblokir browser. Izinkan popup untuk situs ini lalu coba lagi.',
-    'auth/account-exists-with-different-credential':
-      'Email ini sudah terdaftar dengan cara lain (misalnya password).',
-    'auth/operation-not-allowed':
-      'Masuk Google belum diaktifkan di Firebase Console (Authentication → Sign-in method).',
-  };
-  return map[code] || 'Terjadi kesalahan. Coba lagi.';
-}
-
-function setMode(next) {
-  mode = next;
-  clearError();
-  if (mode === 'login') {
-    elTitle.textContent = 'Masuk';
-    elSubmit.textContent = 'Masuk';
-    elToggle.textContent = 'Belum punya akun? Daftar';
-    elPassword.autocomplete = 'current-password';
-  } else {
-    elTitle.textContent = 'Daftar';
-    elSubmit.textContent = 'Daftar';
-    elToggle.textContent = 'Sudah punya akun? Masuk';
-    elPassword.autocomplete = 'new-password';
-  }
-}
-
-function showAuthView() {
-  elAuth.classList.remove('hidden');
-  elApp.classList.add('hidden');
-  elLogout.classList.add('hidden');
-  if (elHeaderTitle) {
-    elHeaderTitle.textContent = 'Mikroklimat DOD — Masuk atau Daftar 🐤';
-  }
-}
-
 function showDashboardView() {
-  elAuth.classList.add('hidden');
   elApp.classList.remove('hidden');
-  elLogout.classList.remove('hidden');
   if (elHeaderTitle) {
     elHeaderTitle.textContent = 'Dashboard Monitoring Mikroklimat DOD 🐤';
   }
 }
 
-elToggle.addEventListener('click', () => {
-  setMode(mode === 'login' ? 'register' : 'login');
-});
-
-elSubmit.addEventListener('click', async () => {
-  clearError();
-  const email = elEmail.value.trim();
-  const password = elPassword.value;
-
-  if (!email || !password) {
-    showError('Isi email dan password.');
-    return;
-  }
-
-  if (isPlaceholder) {
-    showError('Isi firebase-config.js dengan data proyek Firebase Anda.');
-    return;
-  }
-
-  elSubmit.disabled = true;
-  try {
-    if (mode === 'register') {
-      await createUserWithEmailAndPassword(auth, email, password);
-    } else {
-      await signInWithEmailAndPassword(auth, email, password);
-    }
-  } catch (e) {
-    showError(mapAuthError(e.code));
-  } finally {
-    elSubmit.disabled = false;
-  }
-});
-
-elGoogle.addEventListener('click', async () => {
-  clearError();
-
-  if (isPlaceholder) {
-    showError('Isi firebase-config.js dengan data proyek Firebase Anda.');
-    return;
-  }
-
-  if (!auth) return;
-
-  elGoogle.disabled = true;
-  try {
-    await signInWithPopup(auth, googleProvider);
-  } catch (e) {
-    if (
-      e.code === 'auth/popup-closed-by-user' ||
-      e.code === 'auth/cancelled-popup-request'
-    ) {
-      clearError();
-    } else {
-      showError(mapAuthError(e.code));
-    }
-  } finally {
-    elGoogle.disabled = false;
-  }
-});
-
-elLogout.addEventListener('click', async () => {
-  if (!auth) return;
-  try {
-    await signOut(auth);
-  } catch (e) {
-    showError(mapAuthError(e.code));
-  }
-});
-
-
-[elEmail, elPassword].forEach((el) => {
-  el.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') elSubmit.click();
-  });
-});
-
 async function boot() {
   if (isPlaceholder) {
-    showAuthView();
-    setMode('register');
-    showError('Isi firebase-config.js dengan konfigurasi web app Firebase.');
-    elSubmit.disabled = true;
-    elGoogle.disabled = true;
+    console.error('Isi firebase-config.js dengan konfigurasi web app Firebase.');
     return;
   }
 
@@ -370,16 +255,12 @@ async function boot() {
   }
 
   auth = getAuth(firebaseApp);
-  await setPersistence(auth, inMemoryPersistence);
-  await signOut(auth);
-
-  setMode('register');
 
   let lastUid = null;
 
   onAuthStateChanged(auth, (user) => {
     if (user) {
-      console.log('👤 User login:', user.email);
+      console.log('👤 Anonymous user uid:', user.uid);
       const uid = user.uid;
       if (uid !== lastUid) {
         lastUid = uid;
@@ -387,21 +268,18 @@ async function boot() {
         showDashboardView();
         if (typeof window.resetDashboard === 'function') window.resetDashboard();
         attachRtdb(firebaseApp);
-        attachControl(firebaseApp);
+        // attachControl dipanggil oleh attachMode sesuai mode saat ini
+        attachMode(firebaseApp);
         loadHistoryFromFirestore(firebaseApp, uid);
         if (typeof window.startMonitoring === 'function') window.startMonitoring();
       }
     } else {
-      console.log('👤 User logout');
-      lastUid = null;
-      currentUserId = null;
-      detachRtdb();
-      detachControl();
-      if (typeof window.stopMonitoring === 'function') window.stopMonitoring();
-      if (typeof window.resetDashboard === 'function') window.resetDashboard();
-      showAuthView();
+      detachMode();
+      signInAnonymously(auth).catch(console.error);
     }
   });
+
+  await signInAnonymously(auth);
 }
 
 boot().catch(console.error);

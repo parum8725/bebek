@@ -7,6 +7,8 @@ let dataLog = [];
 let monitoringActive = false;
 let lastAppliedReadingKey = null;
 let relayStatus = { heater: 'OFF', intake: 'OFF', exhaust: 'OFF' };
+let currentMode = 'auto';
+let historyLoading = false;
 
 /* PAGINATION */
 let currentPage = 1;
@@ -106,10 +108,11 @@ function normalizeReading(v) {
       ? (typeof v.kelembaban === 'number' ? v.kelembaban.toFixed(1) : String(v.kelembaban))
       : '0';
 
-  // gasAnalog = nilai amonia dalam ppm
+  // gas_ppm = nilai PPM NH3 dari MQ135; fallback ke gas ADC jika firmware lama
+  const gasPpm = v.gas_ppm ?? v.gas;
   const amonia =
-    v.gasAnalog != null
-      ? (typeof v.gasAnalog === 'number' ? v.gasAnalog.toFixed(1) : String(v.gasAnalog))
+    gasPpm != null
+      ? (typeof gasPpm === 'number' ? gasPpm.toFixed(1) : String(gasPpm))
       : '0';
 
   // ⚠️ TIDAK generate relay status otomatis dari sensor data
@@ -133,6 +136,7 @@ function setAwaitingSensor(waiting) {
 }
 
 function applyReadingFromFirebase(v) {
+  if (historyLoading) return;
   const n = normalizeReading(v);
   if (!n) return;
 
@@ -196,6 +200,7 @@ function setAmoniaColor(id, value) {
 
   card.classList.remove('normal', 'danger');
 
+  // Threshold NH3: > 25 ppm = bahaya (sesuai logika ESP autoControl)
   if (value < 25) {
     card.classList.add('normal');
   } else {
@@ -209,51 +214,99 @@ function setStatus(id, status) {
   el.innerText = status;
   el.className = 'status ' + (status === 'ON' ? 'on' : 'off');
 
-  // Track relay status globally
   if (id === 'heater') relayStatus.heater = status;
   if (id === 'intake') relayStatus.intake = status;
   if (id === 'exhaust') relayStatus.exhaust = status;
 
-  // Update card background color
   let card = el.closest('.relay-card');
   if (card) {
     card.classList.remove('relay-on', 'relay-off');
     card.classList.add(status === 'ON' ? 'relay-on' : 'relay-off');
   }
+
+  const btn = document.getElementById('btn-' + id);
+  if (btn) btn.textContent = status === 'ON' ? 'Matikan' : 'Nyalakan';
 }
 
-/* TABEL HISTORI (🔥 FIX: DATA TERBARU DI ATAS) */
-function addTable(suhu, kelembapan, amonia, heater, intake, exhaust, rowTs) {
-  let table = document.getElementById('dataTable');
+/* MODE OTOMATIS / MANUAL */
+function applyModeUI(mode) {
+  currentMode = mode;
+  const label = document.getElementById('modeLabel');
+  const btnToggle = document.getElementById('btn-mode-toggle');
+  const relayBtns = document.querySelectorAll('.btn-toggle');
 
-  let row = table.insertRow(1); // ✅ MASUK KE ATAS
+  if (mode === 'manual') {
+    if (label) label.innerHTML = 'Mode: <strong style="color:#e67e22">MANUAL</strong>';
+    if (btnToggle) btnToggle.textContent = 'Ganti ke Otomatis';
+    relayBtns.forEach(btn => btn.classList.remove('hidden'));
+  } else {
+    if (label) label.innerHTML = 'Mode: <strong>OTOMATIS</strong>';
+    if (btnToggle) btnToggle.textContent = 'Ganti ke Manual';
+    relayBtns.forEach(btn => btn.classList.add('hidden'));
+  }
+}
 
-  let t = rowTs != null ? new Date(rowTs) : new Date();
+function toggleMode() {
+  const next = currentMode === 'auto' ? 'manual' : 'auto';
+  if (typeof window.writeMode === 'function') {
+    window.writeMode(next).catch(console.error);
+  }
+}
 
-  row.insertCell(0);
-  row.insertCell(1).innerText = t.toLocaleDateString();
-  row.insertCell(2).innerText = t.toLocaleTimeString();
-  row.insertCell(3).innerText = suhu;
-  row.insertCell(4).innerText = kelembapan;
-  row.insertCell(5).innerText = amonia;
+function toggleRelay(relayId) {
+  const statusEl = document.getElementById(relayId);
+  const current = statusEl ? statusEl.innerText.trim() : 'OFF';
+  const next = current === 'ON' ? 'OFF' : 'ON';
 
-  // ===== RELAY CELLS DENGAN STYLING =====
-  let cellHeater = row.insertCell(6);
-  cellHeater.innerText = heater;
-  cellHeater.className = 'relay-cell ' + (heater === 'ON' ? 'relay-on' : 'relay-off');
+  const btn = document.getElementById('btn-' + relayId);
+  if (btn) btn.disabled = true;
 
-  let cellIntake = row.insertCell(7);
-  cellIntake.innerText = intake;
-  cellIntake.className = 'relay-cell ' + (intake === 'ON' ? 'relay-on' : 'relay-off');
+  if (typeof window.writeRelayControl === 'function') {
+    window.writeRelayControl(relayId, next)
+      .catch(console.error)
+      .finally(() => { if (btn) btn.disabled = false; });
+  }
+}
 
-  let cellExhaust = row.insertCell(8);
-  cellExhaust.innerText = exhaust;
-  cellExhaust.className = 'relay-cell ' + (exhaust === 'ON' ? 'relay-on' : 'relay-off');
+/* TABEL HISTORI — data terbaru di atas */
+function addTable(suhu, kelembapan, amonia, heater, intake, exhaust, rowTs, skipUpdate = false) {
+  const t = rowTs != null ? new Date(rowTs) : new Date();
+  const tanggal = t.toLocaleDateString('id-ID');
+  const jam = t.toLocaleTimeString('id-ID');
 
-  dataLog.unshift([suhu, kelembapan, amonia, heater, intake, exhaust]); // 🔥 juga dibalik
+  const table = document.getElementById('dataTable');
+  const row = table.insertRow(1); // selalu masuk ke posisi 1 (di bawah header)
 
-  updateNumbering();
-  updateTablePagination();
+  row.insertCell(0); // nomor — diisi updateNumbering()
+  row.insertCell(1).innerText = tanggal;
+  row.insertCell(2).innerText = jam;
+  row.insertCell(3).innerText = suhu ?? '-';
+  row.insertCell(4).innerText = kelembapan ?? '-';
+  row.insertCell(5).innerText = amonia ?? '-';
+
+  const heaterVal = heater ?? '-';
+  const intakeVal  = intake  ?? '-';
+  const exhaustVal = exhaust ?? '-';
+
+  const cellHeater = row.insertCell(6);
+  cellHeater.innerText = heaterVal;
+  cellHeater.className = 'relay-cell ' + (heaterVal === 'ON' ? 'relay-on' : 'relay-off');
+
+  const cellIntake = row.insertCell(7);
+  cellIntake.innerText = intakeVal;
+  cellIntake.className = 'relay-cell ' + (intakeVal === 'ON' ? 'relay-on' : 'relay-off');
+
+  const cellExhaust = row.insertCell(8);
+  cellExhaust.innerText = exhaustVal;
+  cellExhaust.className = 'relay-cell ' + (exhaustVal === 'ON' ? 'relay-on' : 'relay-off');
+
+  // Simpan lengkap dengan tanggal & jam untuk CSV
+  dataLog.unshift({ tanggal, jam, suhu: suhu ?? '-', kelembapan: kelembapan ?? '-', amonia: amonia ?? '-', heater: heaterVal, intake: intakeVal, exhaust: exhaustVal });
+
+  if (!skipUpdate) {
+    updateNumbering();
+    updateTablePagination();
+  }
 }
 
 /* NOMOR OTOMATIS */
@@ -322,25 +375,135 @@ function prevPage() {
   updateTablePagination();
 }
 
-/* DOWNLOAD CSV */
-function downloadCSV() {
-  let csv = 'Suhu,Kelembapan,Amonia,Heater,Intake,Exhaust\n';
+/* DOWNLOAD EXCEL */
+async function downloadCSV() {
+  if (dataLog.length === 0) {
+    alert('Belum ada data untuk diexport.');
+    return;
+  }
 
-  dataLog.forEach((row) => {
-    csv += row.join(',') + '\n';
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Mikroklimat DOD';
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet('Data Monitoring', {
+    views: [{ state: 'frozen', ySplit: 1 }], // freeze baris header
   });
 
-  let blob = new Blob([csv]);
-  let link = document.createElement('a');
+  // ── Kolom ────────────────────────────────────────────────
+  ws.columns = [
+    { key: 'no',        header: 'No',             width: 6  },
+    { key: 'tanggal',   header: 'Tanggal',         width: 14 },
+    { key: 'jam',       header: 'Jam',             width: 12 },
+    { key: 'suhu',      header: 'Suhu (°C)',       width: 12 },
+    { key: 'kelembapan',header: 'Kelembapan (%)',  width: 16 },
+    { key: 'amonia',    header: 'Amonia (ppm)',    width: 14 },
+    { key: 'heater',    header: 'Heater',          width: 10 },
+    { key: 'intake',    header: 'Intake',          width: 10 },
+    { key: 'exhaust',   header: 'Exhaust',         width: 10 },
+  ];
 
-  link.href = URL.createObjectURL(blob);
-  link.download = 'data_monitoring.csv';
+  // ── Style helper ─────────────────────────────────────────
+  const borderThin = (color = 'FFB0B0B0') => ({
+    top:    { style: 'thin', color: { argb: color } },
+    left:   { style: 'thin', color: { argb: color } },
+    bottom: { style: 'thin', color: { argb: color } },
+    right:  { style: 'thin', color: { argb: color } },
+  });
+  const center = { horizontal: 'center', vertical: 'middle' };
+
+  // ── Header row ───────────────────────────────────────────
+  const headerRow = ws.getRow(1);
+  headerRow.height = 24;
+  headerRow.eachCell((cell) => {
+    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11, name: 'Calibri' };
+    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A3C5E' } };
+    cell.alignment = center;
+    cell.border    = borderThin('FF1A3C5E');
+  });
+
+  // ── Data rows ────────────────────────────────────────────
+  const rows = [...dataLog].reverse(); // terlama → terbaru (chronological)
+  rows.forEach((d, i) => {
+    const row = ws.addRow({
+      no:         i + 1,
+      tanggal:    d.tanggal,
+      jam:        d.jam,
+      suhu:       parseFloat(d.suhu)      || d.suhu,
+      kelembapan: parseFloat(d.kelembapan)|| d.kelembapan,
+      amonia:     parseFloat(d.amonia)    || d.amonia,
+      heater:     d.heater,
+      intake:     d.intake,
+      exhaust:    d.exhaust,
+    });
+    row.height = 18;
+
+    // Warna baris selang-seling
+    const rowBg = i % 2 === 0 ? 'FFFFFFFF' : 'FFF0F4F8';
+
+    row.eachCell((cell) => {
+      cell.alignment = center;
+      cell.border    = borderThin();
+      cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
+      cell.font      = { name: 'Calibri', size: 10 };
+    });
+
+    // Warna kolom relay: ON = hijau, OFF = merah
+    ['heater', 'intake', 'exhaust'].forEach((key, idx) => {
+      const cell  = row.getCell(7 + idx);
+      const isOn  = cell.value === 'ON';
+      cell.font   = { bold: true, size: 10, name: 'Calibri',
+                      color: { argb: isOn ? 'FF1E8449' : 'FFC0392B' } };
+      cell.fill   = { type: 'pattern', pattern: 'solid',
+                      fgColor: { argb: isOn ? 'FFD5F5E3' : 'FFFDEDEC' } };
+    });
+  });
+
+  // ── Judul di atas tabel (baris 0 sudah header, sisipkan di atas) ─────
+  // Tambahkan baris judul sebelum data dengan insertRow
+  ws.spliceRows(1, 0, []); // sisipkan baris kosong di posisi 1
+  const titleRow = ws.getRow(1);
+  titleRow.height = 28;
+  ws.mergeCells('A1:I1');
+  const titleCell = ws.getCell('A1');
+  titleCell.value     = 'Data Monitoring Mikroklimat DOD 🐤';
+  titleCell.font      = { bold: true, size: 14, color: { argb: 'FF1A3C5E' }, name: 'Calibri' };
+  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  titleCell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F1F8' } };
+  titleCell.border    = borderThin('FFAAC4D8');
+
+  // Timestamp export di baris 2
+  ws.spliceRows(2, 0, []);
+  const tsRow = ws.getRow(2);
+  tsRow.height = 16;
+  ws.mergeCells('A2:I2');
+  const tsCell = ws.getCell('A2');
+  tsCell.value     = `Diekspor pada: ${new Date().toLocaleString('id-ID')}`;
+  tsCell.font      = { italic: true, size: 9, color: { argb: 'FF888888' }, name: 'Calibri' };
+  tsCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+  // Spasi satu baris kosong sebelum header
+  ws.spliceRows(3, 0, []);
+  ws.getRow(3).height = 8;
+
+  // ── Generate & download ──────────────────────────────────
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob   = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const link = document.createElement('a');
+  const now  = new Date();
+  const ts   = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
+  link.download = `monitoring_mikroklimat_${ts}.xlsx`;
+  link.href     = URL.createObjectURL(blob);
   link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function resetDashboard() {
   stopMonitoring();
   lastAppliedReadingKey = null;
+  historyLoading = false;
   setAwaitingSensor(true);
 
   let table = document.getElementById('dataTable');
@@ -382,31 +545,35 @@ function stopMonitoring() {
 }
 
 function loadHistoryFromFirestore(docs) {
-  console.log('📥 Loading', docs.length, 'documents dari Firestore');
+  historyLoading = true;
 
-  let table = document.getElementById('dataTable');
-  while (table.rows.length > 1) {
-    table.deleteRow(1);
-  }
+  const table = document.getElementById('dataTable');
+  while (table.rows.length > 1) table.deleteRow(1);
 
   dataLog.length = 0;
   labels.length = 0;
   suhuData.length = 0;
   kelembapanData.length = 0;
   amoniaData.length = 0;
+  lastAppliedReadingKey = null;
 
-  docs.forEach((doc) => {
-    const data = doc.data ? doc : doc;
-    const ts = data.timestamp?.toMillis ? data.timestamp.toMillis() : new Date(data.timestamp).getTime();
+  // Firestore mengembalikan DESC (terbaru dulu).
+  // insertRow(1) selalu masukkan ke posisi 1, mendorong yang lama ke bawah.
+  // Agar terbaru ada di atas: iterasi dari yang terlama (index terakhir) dulu.
+  for (let i = docs.length - 1; i >= 0; i--) {
+    const doc = docs[i];
+    const ts = doc.timestamp?.toMillis ? doc.timestamp.toMillis() : Date.parse(doc.timestamp) || Date.now();
+    addTable(doc.suhu, doc.kelembapan, doc.amonia, doc.heater, doc.intake, doc.exhaust, ts, true);
+  }
 
-    addTable(data.suhu, data.kelembapan, data.amonia, data.heater, data.intake, data.exhaust, ts);
-  });
-
+  // Panggil satu kali setelah semua baris masuk — hindari O(n²)
+  updateNumbering();
   updateTablePagination();
   chart1.update();
   chart2.update();
 
-  console.log('✅ History loaded dan ditampilkan');
+  historyLoading = false;
+  console.log('📥 History loaded:', docs.length, 'baris');
 }
 
 
@@ -422,3 +589,6 @@ window.nextPage = nextPage;
 window.prevPage = prevPage;
 window.downloadCSV = downloadCSV;
 window.loadHistoryFromFirestore = loadHistoryFromFirestore;
+window.applyModeUI = applyModeUI;
+window.toggleMode = toggleMode;
+window.toggleRelay = toggleRelay;
