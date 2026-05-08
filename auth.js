@@ -15,7 +15,6 @@ import {
   collection,
   addDoc,
   query,
-  where,
   orderBy,
   getDocs,
   limit,
@@ -109,13 +108,12 @@ async function writeRelayControl(relayId, value) {
 window.writeMode = writeMode;
 window.writeRelayControl = writeRelayControl;
 
-async function saveDataToFirestore(app, userId, sensorData, relayStatus) {
+async function saveDataToFirestore(app, sensorData, relayStatus) {
   try {
     const db = getFirestore(app);
     const monitoringCollection = collection(db, 'monitoring');
 
     const docData = {
-      userId,
       timestamp: Timestamp.now(),
       suhu: parseFloat(sensorData.suhu) || 0,
       kelembapan: parseFloat(sensorData.kelembapan) || 0,
@@ -132,14 +130,13 @@ async function saveDataToFirestore(app, userId, sensorData, relayStatus) {
   }
 }
 
-async function loadHistoryFromFirestore(app, userId, retryCount = 0) {
+async function loadHistoryFromFirestore(app, retryCount = 0) {
   try {
     const db = getFirestore(app);
     const q = query(
       collection(db, 'monitoring'),
-      where('userId', '==', userId),
       orderBy('timestamp', 'desc'),
-      limit(200)
+      limit(1000)
     );
 
     const querySnapshot = await getDocs(q);
@@ -155,7 +152,7 @@ async function loadHistoryFromFirestore(app, userId, retryCount = 0) {
     if (isIndexBuilding && retryCount < 10) {
       const delayMs = 30_000; // coba lagi tiap 30 detik
       console.warn(`⏳ Firestore index masih building, retry ke-${retryCount + 1} dalam 30 detik...`);
-      setTimeout(() => loadHistoryFromFirestore(app, userId, retryCount + 1), delayMs);
+      setTimeout(() => loadHistoryFromFirestore(app, retryCount + 1), delayMs);
     } else {
       console.error('❌ Error loading Firestore:', error);
     }
@@ -215,11 +212,10 @@ function attachRtdb(app) {
       window.applyReadingFromFirebase(v);
 
       const now = Date.now();
-      if (currentUserId && now - lastFirestoreSave >= FIRESTORE_INTERVAL_MS) {
+      if (now - lastFirestoreSave >= FIRESTORE_INTERVAL_MS) {
         lastFirestoreSave = now;
-        // Snapshot relay status saat ini — bukan referensi object yang bisa berubah
         const relaySnapshot = { ...lastRelayStatus };
-        saveDataToFirestore(app, currentUserId, {
+        saveDataToFirestore(app, {
           suhu: v.suhu,
           kelembapan: v.kelembaban,
           amonia: v.gas_ppm ?? v.gas,
@@ -270,7 +266,7 @@ async function boot() {
         attachRtdb(firebaseApp);
         // attachControl dipanggil oleh attachMode sesuai mode saat ini
         attachMode(firebaseApp);
-        loadHistoryFromFirestore(firebaseApp, uid);
+        loadHistoryFromFirestore(firebaseApp);
         if (typeof window.startMonitoring === 'function') window.startMonitoring();
       }
     } else {
