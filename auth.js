@@ -17,7 +17,6 @@ import {
   query,
   orderBy,
   getDocs,
-  limit,
   Timestamp,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 
@@ -135,8 +134,7 @@ async function loadHistoryFromFirestore(app, retryCount = 0) {
     const db = getFirestore(app);
     const q = query(
       collection(db, 'monitoring'),
-      orderBy('timestamp', 'desc'),
-      limit(1000)
+      orderBy('timestamp', 'desc')
     );
 
     const querySnapshot = await getDocs(q);
