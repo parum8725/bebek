@@ -17,6 +17,8 @@ import {
   query,
   orderBy,
   getDocs,
+  startAfter,
+  limit,
   Timestamp,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 
@@ -130,25 +132,40 @@ async function saveDataToFirestore(app, sensorData, relayStatus) {
 }
 
 async function loadHistoryFromFirestore(app, retryCount = 0) {
+  const BATCH_SIZE = 500;
   try {
     const db = getFirestore(app);
-    const q = query(
-      collection(db, 'monitoring'),
-      orderBy('timestamp', 'desc')
-    );
+    let lastDoc = null;
+    let allDocs = [];
 
-    const querySnapshot = await getDocs(q);
-    const docs = [];
-    querySnapshot.forEach((doc) => docs.push({ id: doc.id, ...doc.data() }));
+    if (typeof window.setHistoryLoading === 'function') window.setHistoryLoading(true, 0);
 
-    console.log('📥 Loaded', docs.length, 'dokumen dari Firestore');
-    if (typeof window.loadHistoryFromFirestore === 'function') {
-      window.loadHistoryFromFirestore(docs);
+    while (true) {
+      const q = lastDoc
+        ? query(collection(db, 'monitoring'), orderBy('timestamp', 'desc'), startAfter(lastDoc), limit(BATCH_SIZE))
+        : query(collection(db, 'monitoring'), orderBy('timestamp', 'desc'), limit(BATCH_SIZE));
+
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) break;
+
+      snapshot.forEach((doc) => allDocs.push({ id: doc.id, ...doc.data() }));
+      lastDoc = snapshot.docs[snapshot.docs.length - 1];
+
+      if (typeof window.setHistoryLoading === 'function') window.setHistoryLoading(true, allDocs.length);
+
+      if (snapshot.docs.length < BATCH_SIZE) break;
     }
+
+    console.log('📥 Total loaded:', allDocs.length, 'dokumen dari Firestore');
+
+    if (typeof window.setHistoryLoading === 'function') window.setHistoryLoading(false, allDocs.length);
+    if (typeof window.loadHistoryFromFirestore === 'function') window.loadHistoryFromFirestore(allDocs);
+
   } catch (error) {
+    if (typeof window.setHistoryLoading === 'function') window.setHistoryLoading(false, 0);
     const isIndexBuilding = error.message?.includes('index') || error.code === 'failed-precondition';
     if (isIndexBuilding && retryCount < 10) {
-      const delayMs = 30_000; // coba lagi tiap 30 detik
+      const delayMs = 30_000;
       console.warn(`⏳ Firestore index masih building, retry ke-${retryCount + 1} dalam 30 detik...`);
       setTimeout(() => loadHistoryFromFirestore(app, retryCount + 1), delayMs);
     } else {
@@ -196,15 +213,14 @@ function attachRtdb(app) {
   const db = getDatabase(app);
   const sensorRef = ref(db, 'sensor');
 
-  console.log('🔗 Menghubung ke Firebase Realtime DB:', 'sensor');
+  console.log('🔗 Menghubung ke Firebase Realtime DB: sensor');
 
-  // Throttle Firestore writes: simpan maks 1x per 30 detik (2.880 write/hari — aman di free tier)
   let lastFirestoreSave = 0;
   const FIRESTORE_INTERVAL_MS = 30_000;
 
   rtdbUnsubscribe = onValue(sensorRef, (snap) => {
     const v = snap.val();
-    console.log('📨 Data sensor:', { suhu: v?.suhu, kelembaban: v?.kelembaban, gasAnalog: v?.gasAnalog });
+    console.log('📨 Data sensor:', { suhu: v?.suhu, kelembaban: v?.kelembaban });
 
     if (v && typeof window.applyReadingFromFirebase === 'function') {
       window.applyReadingFromFirebase(v);
@@ -223,9 +239,18 @@ function attachRtdb(app) {
       window.setAwaitingSensor(true);
     }
   }, (error) => {
-    console.error('❌ Error membaca Firebase:', error);
+    // Listener error (misal token expired) — reconnect otomatis setelah 3 detik
+    console.error('❌ RTDB listener error, reconnect dalam 3s:', error);
+    setTimeout(() => attachRtdb(app), 3_000);
   });
 }
+
+// Watchdog: dipanggil dari script.js kalau listener diam terlalu lama
+window.forceRtdbReconnect = () => {
+  if (!firebaseApp) return;
+  console.warn('🔄 Watchdog: reconnect RTDB listener');
+  attachRtdb(firebaseApp);
+};
 
 function showDashboardView() {
   elApp.classList.remove('hidden');

@@ -64,6 +64,12 @@
         </div>
       </div>
 
+      <!-- INDIKATOR KONEKSI SENSOR -->
+      <div id="sensor-status-bar" class="sensor-status-bar">
+        <span>📡 Terakhir terima data sensor: <strong id="last-sensor-time">-</strong></span>
+        <span id="sensor-live-dot" class="sensor-dot dot-waiting"></span>
+      </div>
+
       <!-- STATUS + KONTROL RELAY -->
       <div class="control-section">
         <div class="mode-header">
@@ -107,6 +113,10 @@
           >
             Download Excel
           </button>
+        </div>
+
+        <div id="history-loading" class="history-loading hidden">
+          Memuat histori...
         </div>
 
         <div class="table-info">

@@ -16,6 +16,8 @@ const ROWS_PER_PAGE = 10;
 
 /* AUTO MODE ONLY */
 let lastSensorData = null;
+let lastRawSensorData = null; // simpan data RTDB terakhir selama history loading
+let lastRtdbReceivedAt = null; // kapan terakhir RTDB fire
 
 /* CHART 1: SUHU + KELEMBAPAN */
 let chart1 = new Chart(document.getElementById('chartSuhuKelembapan'), {
@@ -135,32 +137,67 @@ function setAwaitingSensor(waiting) {
   el.classList.toggle('hidden', !waiting);
 }
 
+function updateSensorStatusBar() {
+  const timeEl = document.getElementById('last-sensor-time');
+  const dotEl  = document.getElementById('sensor-live-dot');
+  if (!timeEl || !dotEl) return;
+
+  if (!lastRtdbReceivedAt) {
+    timeEl.textContent = '-';
+    dotEl.className = 'sensor-dot dot-waiting';
+    return;
+  }
+
+  timeEl.textContent = new Date(lastRtdbReceivedAt).toLocaleTimeString('id-ID');
+
+  const ageSec = (Date.now() - lastRtdbReceivedAt) / 1000;
+  if (ageSec < 60)       dotEl.className = 'sensor-dot dot-ok';
+  else if (ageSec < 180) dotEl.className = 'sensor-dot dot-stale';
+  else                   dotEl.className = 'sensor-dot dot-lost';
+}
+
+// Cek status koneksi sensor tiap 10 detik
+setInterval(updateSensorStatusBar, 10_000);
+
+// Watchdog: kalau 2 menit tidak ada data dari RTDB, paksa reconnect listener
+setInterval(() => {
+  if (!lastRtdbReceivedAt) return;
+  const gapMs = Date.now() - lastRtdbReceivedAt;
+  if (gapMs > 2 * 60 * 1000 && typeof window.forceRtdbReconnect === 'function') {
+    console.warn('⚠️ Watchdog: tidak ada data', Math.round(gapMs / 1000), 'detik, reconnect...');
+    window.forceRtdbReconnect();
+  }
+}, 30_000);
+
 function applyReadingFromFirebase(v) {
-  if (historyLoading) return;
   const n = normalizeReading(v);
   if (!n) return;
 
-  const ts = readingTimestamp(v);
-  const dedupeKey = `${n.suhu}|${n.kelembapan}|${n.amonia}|${ts}`;
-  if (dedupeKey === lastAppliedReadingKey) return;
-  lastAppliedReadingKey = dedupeKey;
+  lastRawSensorData = v;    // simpan selalu, dipakai setelah history selesai
+  lastRtdbReceivedAt = Date.now();
+  updateSensorStatusBar();
 
   setAwaitingSensor(false);
 
   const { suhu, kelembapan, amonia } = n;
-
-  // Save sensor data
   lastSensorData = { suhu, kelembapan, amonia };
 
+  // Selalu update kartu sensor live — tidak peduli history loading
   document.getElementById('suhu').innerText = suhu + '°C';
   document.getElementById('kelembapan').innerText = kelembapan + '%';
   document.getElementById('amonia').innerText = amonia + ' ppm';
-
   setColor('suhu', suhu, 32, 35);
   setColor('kelembapan', kelembapan, 60, 70);
   setAmoniaColor('amonia', amonia);
 
-  // Use current relay status from global variable
+  // Tabel dan grafik hanya diupdate setelah history selesai
+  if (historyLoading) return;
+
+  const ts = readingTimestamp(v);
+  const dedupeKey = `${suhu}|${kelembapan}|${amonia}|${ts}`;
+  if (dedupeKey === lastAppliedReadingKey) return;
+  lastAppliedReadingKey = dedupeKey;
+
   addTable(suhu, kelembapan, amonia, relayStatus.heater, relayStatus.intake, relayStatus.exhaust, ts);
 
   const chartTime = new Date(ts).toLocaleTimeString();
@@ -530,11 +567,8 @@ function stopMonitoring() {
 }
 
 function loadHistoryFromFirestore(docs) {
-  historyLoading = true;
-
   const tbody = document.getElementById('tableBody');
-  while (tbody.rows.length > 0) tbody.deleteRow(0);
-
+  tbody.innerHTML = '';
   dataLog.length = 0;
   labels.length = 0;
   suhuData.length = 0;
@@ -542,28 +576,79 @@ function loadHistoryFromFirestore(docs) {
   amoniaData.length = 0;
   lastAppliedReadingKey = null;
 
-  // Firestore mengembalikan DESC (terbaru dulu).
-  // insertRow(1) selalu masukkan ke posisi 1, mendorong yang lama ke bawah.
-  // Agar terbaru ada di atas: iterasi dari yang terlama (index terakhir) dulu.
-  for (let i = docs.length - 1; i >= 0; i--) {
+  // Bangun semua baris sekaligus di DocumentFragment (O(n), bukan O(n²))
+  // docs dari Firestore sudah DESC (terbaru dulu) — urutan fragment = terbaru di atas
+  const fragment = document.createDocumentFragment();
+
+  for (let i = 0; i < docs.length; i++) {
     const doc = docs[i];
     const ts = doc.timestamp?.toMillis ? doc.timestamp.toMillis() : Date.parse(doc.timestamp) || Date.now();
-    addTable(doc.suhu, doc.kelembapan, doc.amonia, doc.heater, doc.intake, doc.exhaust, ts, true);
+    const t = new Date(ts);
+    const tanggal = t.toLocaleDateString('id-ID');
+    const jam = t.toLocaleTimeString('id-ID');
+
+    const suhu      = doc.suhu      ?? '-';
+    const kelembapan = doc.kelembapan ?? '-';
+    const amonia    = doc.amonia    ?? '-';
+    const heaterVal = doc.heater    ?? '-';
+    const intakeVal = doc.intake    ?? '-';
+    const exhaustVal = doc.exhaust  ?? '-';
+
+    dataLog.push({ tanggal, jam, suhu, kelembapan, amonia, heater: heaterVal, intake: intakeVal, exhaust: exhaustVal });
+
+    const row = document.createElement('tr');
+    const c0 = document.createElement('td'); c0.textContent = i + 1;
+    const c1 = document.createElement('td'); c1.textContent = tanggal;
+    const c2 = document.createElement('td'); c2.textContent = jam;
+    const c3 = document.createElement('td'); c3.textContent = suhu;
+    const c4 = document.createElement('td'); c4.textContent = kelembapan;
+    const c5 = document.createElement('td'); c5.textContent = amonia;
+    const c6 = document.createElement('td');
+    c6.textContent = heaterVal;
+    c6.className = 'relay-cell ' + (heaterVal === 'ON' ? 'relay-on' : 'relay-off');
+    const c7 = document.createElement('td');
+    c7.textContent = intakeVal;
+    c7.className = 'relay-cell ' + (intakeVal === 'ON' ? 'relay-on' : 'relay-off');
+    const c8 = document.createElement('td');
+    c8.textContent = exhaustVal;
+    c8.className = 'relay-cell ' + (exhaustVal === 'ON' ? 'relay-on' : 'relay-off');
+
+    row.append(c0, c1, c2, c3, c4, c5, c6, c7, c8);
+    fragment.appendChild(row);
   }
 
-  // Panggil satu kali setelah semua baris masuk — hindari O(n²)
-  updateNumbering();
+  tbody.appendChild(fragment); // satu kali DOM insert
   updateTablePagination();
   chart1.update();
   chart2.update();
 
   historyLoading = false;
-  console.log('📥 History loaded:', docs.length, 'baris');
+  console.log('📥 History rendered:', docs.length, 'baris');
+
+  // Langsung terapkan data sensor terbaru ke tabel & grafik setelah history muncul
+  // (RTDB tidak fire ulang kalau data sensor belum berubah sejak terakhir dikirim)
+  if (lastRawSensorData) {
+    lastAppliedReadingKey = null; // paksa re-apply
+    applyReadingFromFirebase(lastRawSensorData);
+  }
 }
 
 
 
 
+function setHistoryLoading(isLoading, count) {
+  historyLoading = isLoading; // blok real-time data masuk selama loading
+  const el = document.getElementById('history-loading');
+  if (!el) return;
+  if (isLoading) {
+    el.textContent = `Memuat histori... ${count.toLocaleString('id-ID')} baris`;
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
+window.setHistoryLoading = setHistoryLoading;
 window.resetDashboard = resetDashboard;
 window.startMonitoring = startMonitoring;
 window.stopMonitoring = stopMonitoring;
