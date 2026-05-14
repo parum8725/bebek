@@ -10,6 +10,46 @@ let relayStatus = { heater: 'OFF', intake: 'OFF', exhaust: 'OFF' };
 let currentMode = 'auto';
 let historyLoading = false;
 
+/* 7-DAY CHART BUCKETS */
+const DAYS_7 = 7;
+let dayBuckets = {};
+
+function getDateKey(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function initDayBuckets() {
+  dayBuckets = {};
+  for (let i = DAYS_7 - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = getDateKey(d);
+    dayBuckets[key] = {
+      suhu: [], kelembapan: [], amonia: [],
+      label: d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+    };
+  }
+}
+
+function computeChartData() {
+  const keys = Object.keys(dayBuckets).sort();
+  labels.length = 0;
+  suhuData.length = 0;
+  kelembapanData.length = 0;
+  amoniaData.length = 0;
+  const avg = (arr) => arr.length ? +(arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : null;
+  for (const key of keys) {
+    const b = dayBuckets[key];
+    labels.push(b.label);
+    suhuData.push(avg(b.suhu));
+    kelembapanData.push(avg(b.kelembapan));
+    amoniaData.push(avg(b.amonia));
+  }
+}
+
+initDayBuckets();
+
 /* PAGINATION */
 let currentPage = 1;
 const ROWS_PER_PAGE = 10;
@@ -18,6 +58,36 @@ const ROWS_PER_PAGE = 10;
 let lastSensorData = null;
 let lastRawSensorData = null; // simpan data RTDB terakhir selama history loading
 let lastRtdbReceivedAt = null; // kapan terakhir RTDB fire
+
+const chartCommonOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { mode: 'index', intersect: false },
+  plugins: {
+    legend: {
+      labels: { font: { size: 11 }, padding: 16, usePointStyle: true, pointStyleWidth: 10 },
+    },
+    tooltip: {
+      backgroundColor: 'rgba(15,23,42,0.85)',
+      titleFont: { size: 12, weight: 'bold' },
+      bodyFont: { size: 11 },
+      padding: 10,
+      cornerRadius: 8,
+    },
+  },
+  scales: {
+    x: {
+      ticks: { font: { size: 10 }, color: '#64748b' },
+      grid: { color: 'rgba(100,116,139,0.12)' },
+      border: { color: 'rgba(100,116,139,0.2)' },
+    },
+    y: {
+      ticks: { font: { size: 10 }, color: '#64748b' },
+      grid: { color: 'rgba(100,116,139,0.12)' },
+      border: { color: 'rgba(100,116,139,0.2)' },
+    },
+  },
+};
 
 /* CHART 1: SUHU + KELEMBAPAN */
 let chart1 = new Chart(document.getElementById('chartSuhuKelembapan'), {
@@ -28,32 +98,39 @@ let chart1 = new Chart(document.getElementById('chartSuhuKelembapan'), {
       {
         label: 'Suhu (°C)',
         data: suhuData,
-        borderWidth: 2,
-        tension: 0.3,
+        borderColor: '#ef4444',
+        backgroundColor: 'rgba(239,68,68,0.12)',
+        borderWidth: 2.5,
+        tension: 0.4,
+        fill: true,
+        pointBackgroundColor: '#ef4444',
+        pointRadius: 5,
+        pointHoverRadius: 7,
       },
       {
         label: 'Kelembapan (%)',
         data: kelembapanData,
-        borderWidth: 2,
-        tension: 0.3,
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59,130,246,0.10)',
+        borderWidth: 2.5,
+        tension: 0.4,
+        fill: true,
+        pointBackgroundColor: '#3b82f6',
+        pointRadius: 5,
+        pointHoverRadius: 7,
       },
     ],
   },
   options: {
-    responsive: true,
-    maintainAspectRatio: false,
+    ...chartCommonOptions,
     plugins: {
-      legend: {
-        labels: { font: { size: 10 } },
-      },
-    },
-    scales: {
-      x: {
-        ticks: { font: { size: 9 } },
-        grid: { display: false },
-      },
-      y: {
-        ticks: { font: { size: 9 } },
+      ...chartCommonOptions.plugins,
+      title: {
+        display: true,
+        text: 'Suhu & Kelembapan — 7 Hari Terakhir',
+        font: { size: 13, weight: 'bold' },
+        color: '#1e293b',
+        padding: { bottom: 12 },
       },
     },
   },
@@ -68,26 +145,27 @@ let chart2 = new Chart(document.getElementById('chartAmonia'), {
       {
         label: 'Amonia (ppm)',
         data: amoniaData,
-        borderWidth: 2,
-        tension: 0.3,
+        borderColor: '#f59e0b',
+        backgroundColor: 'rgba(245,158,11,0.12)',
+        borderWidth: 2.5,
+        tension: 0.4,
+        fill: true,
+        pointBackgroundColor: '#f59e0b',
+        pointRadius: 5,
+        pointHoverRadius: 7,
       },
     ],
   },
   options: {
-    responsive: true,
-    maintainAspectRatio: false,
+    ...chartCommonOptions,
     plugins: {
-      legend: {
-        labels: { font: { size: 10 } },
-      },
-    },
-    scales: {
-      x: {
-        ticks: { font: { size: 9 } },
-        grid: { display: false },
-      },
-      y: {
-        ticks: { font: { size: 9 } },
+      ...chartCommonOptions.plugins,
+      title: {
+        display: true,
+        text: 'Amonia — 7 Hari Terakhir',
+        font: { size: 13, weight: 'bold' },
+        color: '#1e293b',
+        padding: { bottom: 12 },
       },
     },
   },
@@ -200,17 +278,13 @@ function applyReadingFromFirebase(v) {
 
   addTable(suhu, kelembapan, amonia, relayStatus.heater, relayStatus.intake, relayStatus.exhaust, ts);
 
-  const chartTime = new Date(ts).toLocaleTimeString();
-  labels.push(chartTime);
-  suhuData.push(suhu);
-  kelembapanData.push(kelembapan);
-  amoniaData.push(amonia);
-
-  if (labels.length > 15) {
-    labels.shift();
-    suhuData.shift();
-    kelembapanData.shift();
-    amoniaData.shift();
+  const todayKey = getDateKey(ts);
+  if (dayBuckets[todayKey]) {
+    const sv = parseFloat(suhu), kv = parseFloat(kelembapan), av = parseFloat(amonia);
+    if (!isNaN(sv)) dayBuckets[todayKey].suhu.push(sv);
+    if (!isNaN(kv)) dayBuckets[todayKey].kelembapan.push(kv);
+    if (!isNaN(av)) dayBuckets[todayKey].amonia.push(av);
+    computeChartData();
   }
 
   chart1.update();
@@ -534,10 +608,8 @@ function resetDashboard() {
   while (tbody.rows.length > 0) tbody.deleteRow(0);
 
   dataLog.length = 0;
-  labels.length = 0;
-  suhuData.length = 0;
-  kelembapanData.length = 0;
-  amoniaData.length = 0;
+  initDayBuckets();
+  computeChartData();
 
   document.getElementById('suhu').innerText = '-';
   document.getElementById('kelembapan').innerText = '-';
@@ -570,11 +642,11 @@ function loadHistoryFromFirestore(docs) {
   const tbody = document.getElementById('tableBody');
   tbody.innerHTML = '';
   dataLog.length = 0;
-  labels.length = 0;
-  suhuData.length = 0;
-  kelembapanData.length = 0;
-  amoniaData.length = 0;
   lastAppliedReadingKey = null;
+
+  // Reset dan isi ulang day buckets dari data Firestore
+  initDayBuckets();
+  const cutoff = Date.now() - DAYS_7 * 24 * 60 * 60 * 1000;
 
   // Bangun semua baris sekaligus di DocumentFragment (O(n), bukan O(n²))
   // docs dari Firestore sudah DESC (terbaru dulu) — urutan fragment = terbaru di atas
@@ -595,6 +667,17 @@ function loadHistoryFromFirestore(docs) {
     const exhaustVal = doc.exhaust  ?? '-';
 
     dataLog.push({ tanggal, jam, suhu, kelembapan, amonia, heater: heaterVal, intake: intakeVal, exhaust: exhaustVal });
+
+    // Masukkan ke day bucket untuk grafik 7 hari
+    if (ts >= cutoff) {
+      const key = getDateKey(ts);
+      if (dayBuckets[key]) {
+        const sv = parseFloat(suhu), kv = parseFloat(kelembapan), av = parseFloat(amonia);
+        if (!isNaN(sv)) dayBuckets[key].suhu.push(sv);
+        if (!isNaN(kv)) dayBuckets[key].kelembapan.push(kv);
+        if (!isNaN(av)) dayBuckets[key].amonia.push(av);
+      }
+    }
 
     const row = document.createElement('tr');
     const c0 = document.createElement('td'); c0.textContent = i + 1;
@@ -619,6 +702,8 @@ function loadHistoryFromFirestore(docs) {
 
   tbody.appendChild(fragment); // satu kali DOM insert
   updateTablePagination();
+
+  computeChartData();
   chart1.update();
   chart2.update();
 
