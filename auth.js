@@ -10,19 +10,9 @@ import {
   onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import { getDatabase, ref, onValue, set } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
-import {
-  getFirestore,
-  collection,
-  addDoc,
-  query,
-  orderBy,
-  getDocs,
-  startAfter,
-  limit,
-  Timestamp,
-} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { createClient } from '@supabase/supabase-js';
 
-// Firebase config
+// ── Firebase config ──────────────────────────────────────────────────────────
 const cfg = window.__firebaseConfig || {
   apiKey: 'AIzaSyD9bwhgAF5zocWLcxtEaHlVNthUmsM8cpg',
   authDomain: 'mikroklimat-dod-id.firebaseapp.com',
@@ -34,262 +24,275 @@ const cfg = window.__firebaseConfig || {
 };
 
 const isPlaceholder =
-  !cfg ||
-  !cfg.apiKey ||
-  cfg.apiKey === 'GANTI_API_KEY' ||
-  String(cfg.apiKey).includes('GANTI');
+  !cfg || !cfg.apiKey || cfg.apiKey === 'GANTI_API_KEY' || String(cfg.apiKey).includes('GANTI');
 
-const elApp = document.getElementById('dashboard-app');
+// ── Supabase client ──────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://meyseyyemqhgianummbb.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1leXNleXllbXFoZ2lhbnVtbWJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxOTI4MDMsImV4cCI6MjA5NDc2ODgwM30._gwBfPX8aVv6vX0lllyt_dyi2Hi10LnrZdunFcAqOBA';
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ── Globals ──────────────────────────────────────────────────────────────────
+const elApp         = document.getElementById('dashboard-app');
 const elHeaderTitle = document.querySelector('.header-title');
 
-let auth = null;
-let firebaseApp = null;
-let rtdbUnsubscribe = null;
+let auth          = null;
+let firebaseApp   = null;
+let rtdbUnsubscribe    = null;
 let controlUnsubscribe = null;
-let modeUnsubscribe = null;
-let lastRelayStatus = { heater: 'OFF', intake: 'OFF', exhaust: 'OFF' };
-let currentUserId = null;
+let modeUnsubscribe    = null;
+let lastRelayStatus    = { heater: 'OFF', intake: 'OFF', exhaust: 'OFF' };
+let currentUserId      = null;
 
-function detachRtdb() {
-  if (rtdbUnsubscribe) {
-    rtdbUnsubscribe();
-    rtdbUnsubscribe = null;
-  }
-}
-
-function detachControl() {
-  if (controlUnsubscribe) {
-    controlUnsubscribe();
-    controlUnsubscribe = null;
-  }
-}
-
-function detachMode() {
-  if (modeUnsubscribe) {
-    modeUnsubscribe();
-    modeUnsubscribe = null;
-  }
-}
+// ── RTDB helpers ─────────────────────────────────────────────────────────────
+function detachRtdb()    { if (rtdbUnsubscribe)    { rtdbUnsubscribe();    rtdbUnsubscribe = null; } }
+function detachControl() { if (controlUnsubscribe) { controlUnsubscribe(); controlUnsubscribe = null; } }
+function detachMode()    { if (modeUnsubscribe)    { modeUnsubscribe();    modeUnsubscribe = null; } }
 
 function attachMode(app) {
   detachMode();
   const db = getDatabase(app);
-  // ESP membaca mode dari /control/mode — samakan path-nya
   modeUnsubscribe = onValue(ref(db, 'control/mode'), (snap) => {
     const mode = (snap.val() || 'auto').toLowerCase();
     if (typeof window.applyModeUI === 'function') window.applyModeUI(mode);
-
-    if (mode === 'manual') {
-      // Lepas listener status/ agar hardware tidak override tampilan relay
-      detachControl();
-    } else {
-      // Sambungkan kembali agar tampilan relay ikut hardware
-      attachControl(app);
-    }
+    if (mode === 'manual') detachControl();
+    else attachControl(app);
   });
 }
 
 async function writeMode(mode) {
   if (!firebaseApp) return;
   const db = getDatabase(firebaseApp);
-  // ESP baca dari /control/mode — tulis ke path yang sama
   await set(ref(db, 'control/mode'), mode);
 }
 
 async function writeRelayControl(relayId, value) {
   if (!firebaseApp) return;
   const db = getDatabase(firebaseApp);
-  // Hanya tulis ke control/ (dibaca hardware di mode manual)
-  // Tampilan diupdate langsung via setStatus tanpa bergantung status/ di Firebase
   await set(ref(db, `control/${relayId}`), value);
   if (typeof window.setStatus === 'function') window.setStatus(relayId, value);
 }
 
-window.writeMode = writeMode;
+window.writeMode         = writeMode;
 window.writeRelayControl = writeRelayControl;
-
-async function saveDataToFirestore(app, sensorData, relayStatus) {
-  try {
-    const db = getFirestore(app);
-    const monitoringCollection = collection(db, 'monitoring');
-
-    const docData = {
-      timestamp: Timestamp.now(),
-      suhu: parseFloat(sensorData.suhu) || 0,
-      kelembapan: parseFloat(sensorData.kelembapan) || 0,
-      amonia: parseFloat(sensorData.amonia) || 0,
-      heater: relayStatus.heater || 'OFF',
-      intake: relayStatus.intake || 'OFF',
-      exhaust: relayStatus.exhaust || 'OFF',
-    };
-
-    await addDoc(monitoringCollection, docData);
-    console.log('✅ Data saved to Firestore');
-  } catch (error) {
-    console.error('❌ Error saving to Firestore:', error);
-  }
-}
-
-async function loadHistoryFromFirestore(app, retryCount = 0) {
-  const BATCH_SIZE = 500;
-  try {
-    const db = getFirestore(app);
-    let lastDoc = null;
-    let allDocs = [];
-
-    if (typeof window.setHistoryLoading === 'function') window.setHistoryLoading(true, 0);
-
-    while (true) {
-      const q = lastDoc
-        ? query(collection(db, 'monitoring'), orderBy('timestamp', 'desc'), startAfter(lastDoc), limit(BATCH_SIZE))
-        : query(collection(db, 'monitoring'), orderBy('timestamp', 'desc'), limit(BATCH_SIZE));
-
-      const snapshot = await getDocs(q);
-      if (snapshot.empty) break;
-
-      snapshot.forEach((doc) => allDocs.push({ id: doc.id, ...doc.data() }));
-      lastDoc = snapshot.docs[snapshot.docs.length - 1];
-
-      if (typeof window.setHistoryLoading === 'function') window.setHistoryLoading(true, allDocs.length);
-
-      if (snapshot.docs.length < BATCH_SIZE) break;
-    }
-
-    console.log('📥 Total loaded:', allDocs.length, 'dokumen dari Firestore');
-
-    if (typeof window.setHistoryLoading === 'function') window.setHistoryLoading(false, allDocs.length);
-    if (typeof window.loadHistoryFromFirestore === 'function') window.loadHistoryFromFirestore(allDocs);
-
-  } catch (error) {
-    if (typeof window.setHistoryLoading === 'function') window.setHistoryLoading(false, 0);
-    const isIndexBuilding = error.message?.includes('index') || error.code === 'failed-precondition';
-    if (isIndexBuilding && retryCount < 10) {
-      const delayMs = 30_000;
-      console.warn(`⏳ Firestore index masih building, retry ke-${retryCount + 1} dalam 30 detik...`);
-      setTimeout(() => loadHistoryFromFirestore(app, retryCount + 1), delayMs);
-    } else {
-      console.error('❌ Error loading Firestore:', error);
-    }
-  }
-}
 
 function attachControl(app) {
   detachControl();
-  const db = getDatabase(app);
+  const db        = getDatabase(app);
   const statusRef = ref(db, 'status');
-
-  console.log('🔗 Mendengarkan relay status dari:', 'status');
-
   controlUnsubscribe = onValue(statusRef, (snap) => {
     const v = snap.val();
-    console.log('📡 Relay status dari Firebase:', v);
-
-    if (v) {
-      const heaterStatus = v.heater || 'OFF';
-      const intakeStatus = v.intake || 'OFF';
-      const exhaustStatus = v.exhaust || 'OFF';
-
-      lastRelayStatus = { heater: heaterStatus, intake: intakeStatus, exhaust: exhaustStatus };
-
-      if (typeof window.setStatus === 'function') {
-        console.log('🔥 Update Heater:', heaterStatus);
-        window.setStatus('heater', heaterStatus);
-
-        console.log('💨 Update Intake:', intakeStatus);
-        window.setStatus('intake', intakeStatus);
-
-        console.log('💨 Update Exhaust:', exhaustStatus);
-        window.setStatus('exhaust', exhaustStatus);
-      }
+    if (!v) return;
+    lastRelayStatus = {
+      heater: v.heater  || 'OFF',
+      intake: v.intake  || 'OFF',
+      exhaust: v.exhaust || 'OFF',
+    };
+    if (typeof window.setStatus === 'function') {
+      window.setStatus('heater',  lastRelayStatus.heater);
+      window.setStatus('intake',  lastRelayStatus.intake);
+      window.setStatus('exhaust', lastRelayStatus.exhaust);
     }
-  }, (error) => {
-    console.error('❌ Error membaca status:', error);
-  });
+  }, console.error);
 }
 
+// ── Supabase: save sensor snapshot ───────────────────────────────────────────
+async function saveDataToSupabase(sensorData, relayStatus) {
+  const { error } = await supabase.from('monitoring').insert({
+    timestamp:  new Date().toISOString(),
+    suhu:       parseFloat(sensorData.suhu)      || 0,
+    kelembapan: parseFloat(sensorData.kelembapan) || 0,
+    amonia:     parseFloat(sensorData.amonia)    || 0,
+    heater:     relayStatus.heater  || 'OFF',
+    intake:     relayStatus.intake  || 'OFF',
+    exhaust:    relayStatus.exhaust || 'OFF',
+  });
+  if (error) console.error('❌ Supabase insert:', error);
+  else console.log('✅ Data saved to Supabase');
+}
+
+// ── Supabase: load chart ──────────────────────────────────────────────────────
+async function loadChartFromSupabase() {
+  // Coba RPC dulu (jika sudah dibuat di Supabase)
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('get_chart_harian');
+  if (!rpcErr && rpcData) {
+    if (typeof window.loadChartData === 'function') window.loadChartData(rpcData);
+    return;
+  }
+
+  // Fallback: sampling per hari (tidak butuh SQL function)
+  console.warn('⚠️ RPC tidak tersedia, pakai fallback sampling...');
+  await loadChartFallback();
+}
+
+async function loadChartFallback() {
+  // Ambil range tanggal dari data
+  const [{ data: minRow }, { data: maxRow }] = await Promise.all([
+    supabase.from('monitoring').select('timestamp').order('timestamp', { ascending: true }).limit(1),
+    supabase.from('monitoring').select('timestamp').order('timestamp', { ascending: false }).limit(1),
+  ]);
+  if (!minRow?.length || !maxRow?.length) return;
+
+  // Buat array 7 hari terakhir yang ada datanya
+  const maxDate = new Date(maxRow[0].timestamp);
+  const days = [];
+  const cur = new Date(maxDate);
+  cur.setUTCHours(0, 0, 0, 0);
+  for (let i = 6; i >= 0; i--) {
+    const start = new Date(cur);
+    start.setUTCDate(cur.getUTCDate() - i);
+    const end = new Date(start);
+    end.setUTCDate(start.getUTCDate() + 1);
+    days.push({ start: start.toISOString(), end: end.toISOString() });
+  }
+
+  // Fetch 1000 baris per hari sebagai sample, hitung rata-rata
+  const avg = arr => arr.length ? +(arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : null;
+
+  const results = await Promise.all(days.map(async ({ start, end }) => {
+    const { data } = await supabase
+      .from('monitoring')
+      .select('timestamp,suhu,kelembapan,amonia')
+      .gte('timestamp', start)
+      .lt('timestamp', end)
+      .limit(1000);
+    if (!data?.length) return null;
+    return {
+      hari: start.slice(0, 10),
+      avg_suhu:       avg(data.map(r => r.suhu)),
+      avg_kelembapan: avg(data.map(r => r.kelembapan)),
+      avg_amonia:     avg(data.map(r => r.amonia)),
+    };
+  }));
+
+  const valid = results.filter(Boolean);
+  console.log('📊 Fallback chart loaded:', valid.length, 'hari');
+  if (typeof window.loadChartData === 'function') window.loadChartData(valid);
+}
+
+// ── Supabase: load tabel halaman tertentu ────────────────────────────────────
+const PAGE_SIZE = 10;
+
+async function loadTablePage(page = 1) {
+  if (typeof window.setHistoryLoading === 'function') window.setHistoryLoading(true, 0);
+
+  const from = (page - 1) * PAGE_SIZE;
+  const to   = from + PAGE_SIZE - 1;
+
+  const { data, error, count } = await supabase
+    .from('monitoring')
+    .select('*', { count: 'exact' })
+    .order('timestamp', { ascending: false })
+    .range(from, to);
+
+  if (error) {
+    console.error('❌ Table load error:', error);
+    if (typeof window.setHistoryLoading === 'function') window.setHistoryLoading(false, 0);
+    return;
+  }
+
+  if (typeof window.renderTablePage === 'function') window.renderTablePage(data, count, page, PAGE_SIZE);
+  if (typeof window.setHistoryLoading === 'function') window.setHistoryLoading(false, count);
+}
+
+// ── Supabase: fetch semua baris untuk export Excel ───────────────────────────
+async function fetchAllRowsForExport() {
+  const BATCH = 1000;
+  let all  = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('monitoring')
+      .select('timestamp,suhu,kelembapan,amonia,heater,intake,exhaust')
+      .order('timestamp', { ascending: true })
+      .range(from, from + BATCH - 1);
+
+    if (error || !data || data.length === 0) break;
+    all  = all.concat(data);
+    if (data.length < BATCH) break;
+    from += BATCH;
+  }
+  return all;
+}
+
+window.loadTablePage          = loadTablePage;
+window.fetchAllRowsForExport  = fetchAllRowsForExport;
+
+// ── RTDB: sensor listener ─────────────────────────────────────────────────────
 function attachRtdb(app) {
   detachRtdb();
-  const db = getDatabase(app);
+  const db        = getDatabase(app);
   const sensorRef = ref(db, 'sensor');
 
-  console.log('🔗 Menghubung ke Firebase Realtime DB: sensor');
-
-  let lastFirestoreSave = 0;
-  const FIRESTORE_INTERVAL_MS = 30_000;
+  let lastSupabaseSave    = 0;
+  const SUPABASE_INTERVAL = 30_000;
 
   rtdbUnsubscribe = onValue(sensorRef, (snap) => {
     const v = snap.val();
-    console.log('📨 Data sensor:', { suhu: v?.suhu, kelembaban: v?.kelembaban });
-
     if (v && typeof window.applyReadingFromFirebase === 'function') {
       window.applyReadingFromFirebase(v);
 
       const now = Date.now();
-      if (now - lastFirestoreSave >= FIRESTORE_INTERVAL_MS) {
-        lastFirestoreSave = now;
-        const relaySnapshot = { ...lastRelayStatus };
-        saveDataToFirestore(app, {
-          suhu: v.suhu,
-          kelembapan: v.kelembaban,
-          amonia: v.gas_ppm ?? v.gas,
-        }, relaySnapshot);
+      if (now - lastSupabaseSave >= SUPABASE_INTERVAL) {
+        lastSupabaseSave = now;
+        saveDataToSupabase(
+          { suhu: v.suhu, kelembapan: v.kelembaban, amonia: v.gas_ppm ?? v.gas },
+          { ...lastRelayStatus }
+        );
       }
     } else if (typeof window.setAwaitingSensor === 'function') {
       window.setAwaitingSensor(true);
     }
   }, (error) => {
-    // Listener error (misal token expired) — reconnect otomatis setelah 3 detik
-    console.error('❌ RTDB listener error, reconnect dalam 3s:', error);
+    console.error('❌ RTDB listener error, reconnect 3s:', error);
     setTimeout(() => attachRtdb(app), 3_000);
   });
 }
 
-// Watchdog: dipanggil dari script.js kalau listener diam terlalu lama
 window.forceRtdbReconnect = () => {
   if (!firebaseApp) return;
-  console.warn('🔄 Watchdog: reconnect RTDB listener');
+  console.warn('🔄 Watchdog: reconnect RTDB');
   attachRtdb(firebaseApp);
 };
 
+// ── View helpers ──────────────────────────────────────────────────────────────
 function showDashboardView() {
   elApp.classList.remove('hidden');
-  if (elHeaderTitle) {
-    elHeaderTitle.textContent = 'Dashboard Monitoring Mikroklimat DOD 🐤';
-  }
+  if (elHeaderTitle) elHeaderTitle.textContent = 'Dashboard Monitoring Mikroklimat DOD 🐤';
+  setTimeout(() => {
+    if (typeof window.resizeCharts === 'function') window.resizeCharts();
+  }, 0);
 }
 
+// ── Boot ──────────────────────────────────────────────────────────────────────
 async function boot() {
   if (isPlaceholder) {
-    console.error('Isi firebase-config.js dengan konfigurasi web app Firebase.');
+    console.error('Isi firebase-config.js dengan konfigurasi Firebase.');
     return;
   }
 
   firebaseApp = initializeApp(cfg);
 
-  if (cfg.measurementId) {
-    isSupported().then((yes) => {
-      if (yes) getAnalytics(firebaseApp);
-    });
-  }
+  isSupported().then((yes) => { if (yes) getAnalytics(firebaseApp); });
 
   auth = getAuth(firebaseApp);
 
   let lastUid = null;
 
-  onAuthStateChanged(auth, (user) => {
+  onAuthStateChanged(auth, async (user) => {
     if (user) {
-      console.log('👤 Anonymous user uid:', user.uid);
       const uid = user.uid;
       if (uid !== lastUid) {
-        lastUid = uid;
+        lastUid       = uid;
         currentUserId = uid;
         showDashboardView();
         if (typeof window.resetDashboard === 'function') window.resetDashboard();
         attachRtdb(firebaseApp);
-        // attachControl dipanggil oleh attachMode sesuai mode saat ini
         attachMode(firebaseApp);
-        loadHistoryFromFirestore(firebaseApp);
         if (typeof window.startMonitoring === 'function') window.startMonitoring();
+        // Load chart dari Supabase (daily averages) lalu tabel halaman 1
+        await loadChartFromSupabase();
+        await loadTablePage(1);
       }
     } else {
       detachMode();

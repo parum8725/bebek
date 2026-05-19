@@ -10,8 +10,7 @@ let relayStatus = { heater: 'OFF', intake: 'OFF', exhaust: 'OFF' };
 let currentMode = 'auto';
 let historyLoading = false;
 
-/* 7-DAY CHART BUCKETS */
-const DAYS_7 = 7;
+/* CHART BUCKETS — semua hari dari data history */
 let dayBuckets = {};
 
 function getDateKey(ts) {
@@ -21,15 +20,18 @@ function getDateKey(ts) {
 
 function initDayBuckets() {
   dayBuckets = {};
-  for (let i = DAYS_7 - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = getDateKey(d);
+}
+
+function ensureBucket(ts) {
+  const key = getDateKey(ts);
+  if (!dayBuckets[key]) {
+    const d = new Date(ts);
     dayBuckets[key] = {
       suhu: [], kelembapan: [], amonia: [],
-      label: d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+      label: d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' }),
     };
   }
+  return key;
 }
 
 function computeChartData() {
@@ -278,14 +280,12 @@ function applyReadingFromFirebase(v) {
 
   addTable(suhu, kelembapan, amonia, relayStatus.heater, relayStatus.intake, relayStatus.exhaust, ts);
 
-  const todayKey = getDateKey(ts);
-  if (dayBuckets[todayKey]) {
-    const sv = parseFloat(suhu), kv = parseFloat(kelembapan), av = parseFloat(amonia);
-    if (!isNaN(sv)) dayBuckets[todayKey].suhu.push(sv);
-    if (!isNaN(kv)) dayBuckets[todayKey].kelembapan.push(kv);
-    if (!isNaN(av)) dayBuckets[todayKey].amonia.push(av);
-    computeChartData();
-  }
+  const todayKey = ensureBucket(ts);
+  const sv = parseFloat(suhu), kv = parseFloat(kelembapan), av = parseFloat(amonia);
+  if (!isNaN(sv)) dayBuckets[todayKey].suhu.push(sv);
+  if (!isNaN(kv)) dayBuckets[todayKey].kelembapan.push(kv);
+  if (!isNaN(av)) dayBuckets[todayKey].amonia.push(av);
+  computeChartData();
 
   chart1.update();
   chart2.update();
@@ -462,20 +462,40 @@ function updateTablePagination() {
 }
 
 function nextPage() {
-  currentPage++;
-  updateTablePagination();
+  if (typeof window.loadTablePage === 'function') window.loadTablePage(currentPage + 1);
 }
 
 function prevPage() {
-  if (currentPage > 1) {
-    currentPage--;
-  }
-  updateTablePagination();
+  if (currentPage > 1 && typeof window.loadTablePage === 'function') window.loadTablePage(currentPage - 1);
 }
 
 /* DOWNLOAD EXCEL */
 async function downloadCSV() {
-  if (dataLog.length === 0) {
+  let exportLog = dataLog;
+
+  if (typeof window.fetchAllRowsForExport === 'function') {
+    const btn = document.querySelector('[onclick="downloadCSV()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Mengambil data...'; }
+    const rows = await window.fetchAllRowsForExport();
+    if (btn) { btn.disabled = false; btn.textContent = 'Download Excel'; }
+    if (rows && rows.length > 0) {
+      exportLog = rows.map(r => {
+        const ts = new Date(r.timestamp);
+        return {
+          tanggal:    ts.toLocaleDateString('id-ID'),
+          jam:        ts.toLocaleTimeString('id-ID'),
+          suhu:       r.suhu       ?? '-',
+          kelembapan: r.kelembapan ?? '-',
+          amonia:     r.amonia     ?? '-',
+          heater:     r.heater     ?? '-',
+          intake:     r.intake     ?? '-',
+          exhaust:    r.exhaust    ?? '-',
+        };
+      });
+    }
+  }
+
+  if (exportLog.length === 0) {
     alert('Belum ada data untuk diexport.');
     return;
   }
@@ -521,7 +541,7 @@ async function downloadCSV() {
   });
 
   // ── Data rows ────────────────────────────────────────────
-  const rows = [...dataLog].reverse(); // terlama → terbaru (chronological)
+  const rows = [...exportLog].reverse(); // terlama → terbaru (chronological)
   rows.forEach((d, i) => {
     const row = ws.addRow({
       no:         i + 1,
@@ -646,7 +666,6 @@ function loadHistoryFromFirestore(docs) {
 
   // Reset dan isi ulang day buckets dari data Firestore
   initDayBuckets();
-  const cutoff = Date.now() - DAYS_7 * 24 * 60 * 60 * 1000;
 
   // Bangun semua baris sekaligus di DocumentFragment (O(n), bukan O(n²))
   // docs dari Firestore sudah DESC (terbaru dulu) — urutan fragment = terbaru di atas
@@ -668,16 +687,12 @@ function loadHistoryFromFirestore(docs) {
 
     dataLog.push({ tanggal, jam, suhu, kelembapan, amonia, heater: heaterVal, intake: intakeVal, exhaust: exhaustVal });
 
-    // Masukkan ke day bucket untuk grafik 7 hari
-    if (ts >= cutoff) {
-      const key = getDateKey(ts);
-      if (dayBuckets[key]) {
-        const sv = parseFloat(suhu), kv = parseFloat(kelembapan), av = parseFloat(amonia);
-        if (!isNaN(sv)) dayBuckets[key].suhu.push(sv);
-        if (!isNaN(kv)) dayBuckets[key].kelembapan.push(kv);
-        if (!isNaN(av)) dayBuckets[key].amonia.push(av);
-      }
-    }
+    // Masukkan ke day bucket — semua hari dari history
+    const key = ensureBucket(ts);
+    const sv = parseFloat(suhu), kv = parseFloat(kelembapan), av = parseFloat(amonia);
+    if (!isNaN(sv)) dayBuckets[key].suhu.push(sv);
+    if (!isNaN(kv)) dayBuckets[key].kelembapan.push(kv);
+    if (!isNaN(av)) dayBuckets[key].amonia.push(av);
 
     const row = document.createElement('tr');
     const c0 = document.createElement('td'); c0.textContent = i + 1;
@@ -733,17 +748,107 @@ function setHistoryLoading(isLoading, count) {
   }
 }
 
-window.setHistoryLoading = setHistoryLoading;
-window.resetDashboard = resetDashboard;
-window.startMonitoring = startMonitoring;
-window.stopMonitoring = stopMonitoring;
-window.applyReadingFromFirebase = applyReadingFromFirebase;
-window.setAwaitingSensor = setAwaitingSensor;
-window.setStatus = setStatus;
-window.nextPage = nextPage;
-window.prevPage = prevPage;
-window.downloadCSV = downloadCSV;
-window.loadHistoryFromFirestore = loadHistoryFromFirestore;
-window.applyModeUI = applyModeUI;
-window.toggleMode = toggleMode;
-window.toggleRelay = toggleRelay;
+/* LOAD CHART — dari daily aggregates Supabase, tampilkan 7 hari terakhir */
+function loadChartData(dailyRows) {
+  initDayBuckets();
+
+  // Ambil 7 hari terakhir dari data history (bukan dari hari ini)
+  const rows7 = dailyRows.slice(-7);
+
+  for (const row of rows7) {
+    const [year, month, day] = String(row.hari).split('-').map(Number);
+    const key   = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const label = new Date(year, month - 1, day).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+    dayBuckets[key] = {
+      suhu:       [parseFloat(row.avg_suhu)],
+      kelembapan: [parseFloat(row.avg_kelembapan)],
+      amonia:     [parseFloat(row.avg_amonia)],
+      label,
+    };
+  }
+
+  computeChartData();
+  chart1.update();
+  chart2.update();
+  console.log('📊 Chart loaded:', rows7.length, 'hari dari', dailyRows.length, 'total hari');
+}
+
+/* RENDER TABEL — server-side pagination dari Supabase */
+function renderTablePage(rows, totalCount, page, pageSize) {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  dataLog.length = 0;
+  currentPage = page;
+
+  const offset   = (page - 1) * pageSize;
+  const fragment = document.createDocumentFragment();
+
+  for (let i = 0; i < rows.length; i++) {
+    const row  = rows[i];
+    const ts   = new Date(row.timestamp);
+    const tanggal    = ts.toLocaleDateString('id-ID');
+    const jam        = ts.toLocaleTimeString('id-ID');
+    const suhu       = row.suhu       ?? '-';
+    const kelembapan = row.kelembapan ?? '-';
+    const amonia     = row.amonia     ?? '-';
+    const heaterVal  = row.heater     ?? '-';
+    const intakeVal  = row.intake     ?? '-';
+    const exhaustVal = row.exhaust    ?? '-';
+
+    dataLog.push({ tanggal, jam, suhu, kelembapan, amonia, heater: heaterVal, intake: intakeVal, exhaust: exhaustVal });
+
+    const tr = document.createElement('tr');
+    const c0 = document.createElement('td'); c0.textContent = offset + i + 1;
+    const c1 = document.createElement('td'); c1.textContent = tanggal;
+    const c2 = document.createElement('td'); c2.textContent = jam;
+    const c3 = document.createElement('td'); c3.textContent = suhu;
+    const c4 = document.createElement('td'); c4.textContent = kelembapan;
+    const c5 = document.createElement('td'); c5.textContent = amonia;
+    const c6 = document.createElement('td');
+    c6.textContent = heaterVal;
+    c6.className = 'relay-cell ' + (heaterVal === 'ON' ? 'relay-on' : 'relay-off');
+    const c7 = document.createElement('td');
+    c7.textContent = intakeVal;
+    c7.className = 'relay-cell ' + (intakeVal === 'ON' ? 'relay-on' : 'relay-off');
+    const c8 = document.createElement('td');
+    c8.textContent = exhaustVal;
+    c8.className = 'relay-cell ' + (exhaustVal === 'ON' ? 'relay-on' : 'relay-off');
+    tr.append(c0, c1, c2, c3, c4, c5, c6, c7, c8);
+    fragment.appendChild(tr);
+  }
+
+  tbody.appendChild(fragment);
+
+  const totalPages = Math.ceil(totalCount / pageSize);
+  const startNo    = totalCount > 0 ? offset + 1 : 0;
+  const endNo      = offset + rows.length;
+
+  document.getElementById('infoData').innerText =
+    totalCount === 0 ? 'Belum ada data' : `${startNo}–${endNo} dari ${totalCount.toLocaleString('id-ID')} baris`;
+  document.getElementById('pageInfo').innerText = `${page} / ${totalPages}`;
+
+  const prevBtn = document.querySelector('.pagination button:first-child');
+  const nextBtn = document.querySelector('.pagination button:last-child');
+  if (prevBtn) prevBtn.disabled = page <= 1;
+  if (nextBtn) nextBtn.disabled = page >= totalPages;
+}
+
+window.resizeCharts = function () {
+  chart1.resize();
+  chart2.resize();
+};
+window.loadChartData             = loadChartData;
+window.renderTablePage           = renderTablePage;
+window.setHistoryLoading         = setHistoryLoading;
+window.resetDashboard            = resetDashboard;
+window.startMonitoring           = startMonitoring;
+window.stopMonitoring            = stopMonitoring;
+window.applyReadingFromFirebase  = applyReadingFromFirebase;
+window.setAwaitingSensor         = setAwaitingSensor;
+window.setStatus                 = setStatus;
+window.nextPage                  = nextPage;
+window.prevPage                  = prevPage;
+window.downloadCSV               = downloadCSV;
+window.applyModeUI               = applyModeUI;
+window.toggleMode                = toggleMode;
+window.toggleRelay               = toggleRelay;
