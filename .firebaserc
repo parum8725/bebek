@@ -1,6 +1,6 @@
 {
   "projects": {
-    "firebase use mikroklimat-dod": "mikroklimat-dod"
+    "default": "mikroklimat-dod-id"
   },
   "targets": {},
   "etags": {}

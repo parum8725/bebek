@@ -1,0 +1,45 @@
+[debug] [2026-05-19T17:03:28.330Z] ----------------------------------------------------------------------
+[debug] [2026-05-19T17:03:28.332Z] Command:       /home/mrgengs/.nvm/versions/node/v24.14.0/bin/node /home/mrgengs/.nvm/versions/node/v24.14.0/bin/firebase deploy --project mikroklimat-dod-id
+[debug] [2026-05-19T17:03:28.333Z] CLI Version:   15.15.0
+[debug] [2026-05-19T17:03:28.333Z] Platform:      linux
+[debug] [2026-05-19T17:03:28.333Z] Node Version:  v24.14.0
+[debug] [2026-05-19T17:03:28.333Z] Time:          Wed May 20 2026 00:03:28 GMT+0700 (Western Indonesia Time)
+[debug] [2026-05-19T17:03:28.333Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-05-19T17:03:29.630Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-05-19T17:03:29.631Z] > authorizing via signed-in user (sugengmargono901@gmail.com)
+[debug] [2026-05-19T17:03:29.631Z] [iam] checking project mikroklimat-dod-id for permissions ["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasedatabase.instances.update","firebasehosting.sites.update"]
+[debug] [2026-05-19T17:03:29.632Z] Checked if tokens are valid: true, expires at: 1779213690590
+[debug] [2026-05-19T17:03:29.632Z] Checked if tokens are valid: true, expires at: 1779213690590
+[debug] [2026-05-19T17:03:29.633Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/mikroklimat-dod-id:testIamPermissions [none]
+[debug] [2026-05-19T17:03:29.633Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/mikroklimat-dod-id:testIamPermissions  x-goog-user-project=mikroklimat-dod-id
+[debug] [2026-05-19T17:03:29.633Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/mikroklimat-dod-id:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasedatabase.instances.update","firebasehosting.sites.update"]}
+[debug] [2026-05-19T17:03:30.563Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/mikroklimat-dod-id:testIamPermissions 200
+[debug] [2026-05-19T17:03:30.564Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/mikroklimat-dod-id:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get","firebasedatabase.instances.update","firebasehosting.sites.update"]}
+[debug] [2026-05-19T17:03:30.565Z] Checked if tokens are valid: true, expires at: 1779213690590
+[debug] [2026-05-19T17:03:30.565Z] Checked if tokens are valid: true, expires at: 1779213690590
+[debug] [2026-05-19T17:03:30.566Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/mikroklimat-dod-id [none]
+[debug] [2026-05-19T17:03:31.578Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/mikroklimat-dod-id 200
+[debug] [2026-05-19T17:03:31.578Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/mikroklimat-dod-id {"projectId":"mikroklimat-dod-id","projectNumber":"794594833967","displayName":"Mikroklimat-DOD","name":"projects/mikroklimat-dod-id","resources":{"hostingSite":"mikroklimat-dod-id","realtimeDatabaseInstance":"mikroklimat-dod-id-default-rtdb"},"state":"ACTIVE","etag":"1_066e3e04-708b-4744-b37c-0c77cd004255"}
+[debug] [2026-05-19T17:03:31.579Z] Checked if tokens are valid: true, expires at: 1779213690590
+[debug] [2026-05-19T17:03:31.579Z] Checked if tokens are valid: true, expires at: 1779213690590
+[debug] [2026-05-19T17:03:31.579Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/mikroklimat-dod-id [none]
+[debug] [2026-05-19T17:03:32.229Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/mikroklimat-dod-id 200
+[debug] [2026-05-19T17:03:32.229Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/mikroklimat-dod-id {"projectId":"mikroklimat-dod-id","projectNumber":"794594833967","displayName":"Mikroklimat-DOD","name":"projects/mikroklimat-dod-id","resources":{"hostingSite":"mikroklimat-dod-id","realtimeDatabaseInstance":"mikroklimat-dod-id-default-rtdb"},"state":"ACTIVE","etag":"1_066e3e04-708b-4744-b37c-0c77cd004255"}
+[info] 
+[info] === Deploying to 'mikroklimat-dod-id'...
+[info] 
+[info] i  deploying database, firestore, hosting 
+[info] i  database: checking rules syntax... 
+[debug] [2026-05-19T17:03:32.234Z] Checked if tokens are valid: true, expires at: 1779213690590
+[debug] [2026-05-19T17:03:32.235Z] Checked if tokens are valid: true, expires at: 1779213690590
+[debug] [2026-05-19T17:03:32.235Z] >>> [apiv2][query] GET https://firebasedatabase.googleapis.com/v1beta/projects/mikroklimat-dod-id/locations/-/instances/mikroklimat-dod-id-default-rtdb [none]
+[debug] [2026-05-19T17:03:33.924Z] <<< [apiv2][status] GET https://firebasedatabase.googleapis.com/v1beta/projects/mikroklimat-dod-id/locations/-/instances/mikroklimat-dod-id-default-rtdb 403
+[debug] [2026-05-19T17:03:33.924Z] <<< [apiv2][body] GET https://firebasedatabase.googleapis.com/v1beta/projects/mikroklimat-dod-id/locations/-/instances/mikroklimat-dod-id-default-rtdb {"error":{"code":403,"message":"Permission 'firebasedatabase.instances.get' denied on resource '//firebasedatabase.googleapis.com/projects/mikroklimat-dod-id/locations/-/instances/mikroklimat-dod-id-default-rtdb' (or it may not exist).","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"IAM_PERMISSION_DENIED","domain":"firebasedatabase.googleapis.com","metadata":{"permission":"firebasedatabase.instances.get","resource":"projects/mikroklimat-dod-id/locations/-/instances/mikroklimat-dod-id-default-rtdb"}}]}}
+[debug] [2026-05-19T17:03:33.926Z] Request to https://firebasedatabase.googleapis.com/v1beta/projects/mikroklimat-dod-id/locations/-/instances/mikroklimat-dod-id-default-rtdb had HTTP Error: 403, Permission 'firebasedatabase.instances.get' denied on resource '//firebasedatabase.googleapis.com/projects/mikroklimat-dod-id/locations/-/instances/mikroklimat-dod-id-default-rtdb' (or it may not exist).
+[debug] [2026-05-19T17:03:34.220Z] FirebaseError: Request to https://firebasedatabase.googleapis.com/v1beta/projects/mikroklimat-dod-id/locations/-/instances/mikroklimat-dod-id-default-rtdb had HTTP Error: 403, Permission 'firebasedatabase.instances.get' denied on resource '//firebasedatabase.googleapis.com/projects/mikroklimat-dod-id/locations/-/instances/mikroklimat-dod-id-default-rtdb' (or it may not exist).
+    at responseToError (/home/mrgengs/.nvm/versions/node/v24.14.0/lib/node_modules/firebase-tools/lib/responseToError.js:53:12)
+    at RetryOperation._fn (/home/mrgengs/.nvm/versions/node/v24.14.0/lib/node_modules/firebase-tools/lib/apiv2.js:333:77)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+[error] 
+[error] Error: Failed to get instance details for instance: mikroklimat-dod-id-default-rtdb. See firebase-debug.log for more details.
