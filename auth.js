@@ -14,13 +14,14 @@ import { createClient } from '@supabase/supabase-js';
 
 // ── Firebase config ──────────────────────────────────────────────────────────
 const cfg = window.__firebaseConfig || {
-  apiKey: 'AIzaSyD9bwhgAF5zocWLcxtEaHlVNthUmsM8cpg',
-  authDomain: 'mikroklimat-dod-id.firebaseapp.com',
-  databaseURL: 'https://mikroklimat-dod-id-default-rtdb.asia-southeast1.firebasedatabase.app',
-  projectId: 'mikroklimat-dod-id',
-  storageBucket: 'mikroklimat-dod-id.firebasestorage.app',
-  messagingSenderId: '794594833967',
-  appId: '1:794594833967:web:f58153993f51ad1447f8da',
+  apiKey: 'AIzaSyAiUdBLlfaemZ_aTytRiuHbvUurAGHnOgk',
+  authDomain: 'mikroklimat-dod.firebaseapp.com',
+  databaseURL: 'https://mikroklimat-dod-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId: 'mikroklimat-dod',
+  storageBucket: 'mikroklimat-dod.firebasestorage.app',
+  messagingSenderId: '1020423643943',
+  appId: '1:1020423643943:web:9fe4e849643821c5c87f02',
+  measurementId: 'G-F55GHD73DH',
 };
 
 const isPlaceholder =
@@ -124,49 +125,78 @@ async function loadChartFromSupabase() {
   await loadChartFallback();
 }
 
-async function loadChartFallback() {
-  // Ambil range tanggal dari data
-  const [{ data: minRow }, { data: maxRow }] = await Promise.all([
-    supabase.from('monitoring').select('timestamp').order('timestamp', { ascending: true }).limit(1),
-    supabase.from('monitoring').select('timestamp').order('timestamp', { ascending: false }).limit(1),
-  ]);
-  if (!minRow?.length || !maxRow?.length) return;
+// YYYY-MM-DD dari komponen tanggal LOKAL (konsisten dgn tabel & label chart)
+function ymdLocal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
-  // Buat array 7 hari terakhir yang ada datanya
-  const maxDate = new Date(maxRow[0].timestamp);
-  const days = [];
-  const cur = new Date(maxDate);
-  cur.setUTCHours(0, 0, 0, 0);
-  for (let i = 6; i >= 0; i--) {
-    const start = new Date(cur);
-    start.setUTCDate(cur.getUTCDate() - i);
-    const end = new Date(start);
-    end.setUTCDate(start.getUTCDate() + 1);
-    days.push({ start: start.toISOString(), end: end.toISOString() });
+async function loadChartFallback() {
+  // 1) Anchor pada timestamp PALING AKHIR yang ada di Supabase
+  const { data: maxRow } = await supabase
+    .from('monitoring')
+    .select('timestamp')
+    .order('timestamp', { ascending: false })
+    .limit(1);
+  if (!maxRow?.length) {
+    console.warn('⚠️ Tidak ada data di Supabase untuk chart.');
+    return;
   }
 
-  // Fetch 1000 baris per hari sebagai sample, hitung rata-rata
-  const avg = arr => arr.length ? +(arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : null;
+  // 2) Mundur dari hari terakhir, kumpulkan 7 hari yang BENAR-BENAR punya data.
+  //    Data bisa berlubang (ada gap antar tanggal), jadi jangan pakai 7 hari
+  //    kalender mentah — itu bikin chart kosong.
+  const DAYS_TARGET = 7;
+  const MAX_SCAN    = 45;            // batas mundur maksimal (hari)
+  const activeDays  = [];
 
-  const results = await Promise.all(days.map(async ({ start, end }) => {
+  const anchor = new Date(maxRow[0].timestamp);
+  anchor.setHours(0, 0, 0, 0);      // awal hari (lokal) dari tanggal terakhir
+
+  for (let i = 0; i < MAX_SCAN && activeDays.length < DAYS_TARGET; i++) {
+    const start = new Date(anchor);
+    start.setDate(anchor.getDate() - i);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1);
+
+    const { count } = await supabase
+      .from('monitoring')
+      .select('timestamp', { count: 'exact', head: true })
+      .gte('timestamp', start.toISOString())
+      .lt('timestamp', end.toISOString());
+
+    if (count && count > 0) activeDays.push({ start, end, count });
+  }
+
+  // 3) Urutkan dari tanggal PALING AWAL → PALING AKHIR
+  activeDays.reverse();
+
+  // 4) Rata-rata representatif per hari: ambil sample di TENGAH hari
+  //    (range offset di tengah) supaya tidak bias ke jam-jam awal saja.
+  const avg = arr => arr.length ? +(arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : null;
+  const SAMPLE = 1000;
+
+  const results = [];
+  for (const day of activeDays) {
+    const offset = Math.max(0, Math.floor((day.count - SAMPLE) / 2));
     const { data } = await supabase
       .from('monitoring')
       .select('timestamp,suhu,kelembapan,amonia')
-      .gte('timestamp', start)
-      .lt('timestamp', end)
-      .limit(1000);
-    if (!data?.length) return null;
-    return {
-      hari: start.slice(0, 10),
+      .gte('timestamp', day.start.toISOString())
+      .lt('timestamp', day.end.toISOString())
+      .order('timestamp', { ascending: true })
+      .range(offset, offset + SAMPLE - 1);
+    if (!data?.length) continue;
+    results.push({
+      hari:           ymdLocal(day.start),
       avg_suhu:       avg(data.map(r => r.suhu)),
       avg_kelembapan: avg(data.map(r => r.kelembapan)),
       avg_amonia:     avg(data.map(r => r.amonia)),
-    };
-  }));
+    });
+  }
 
-  const valid = results.filter(Boolean);
-  console.log('📊 Fallback chart loaded:', valid.length, 'hari');
-  if (typeof window.loadChartData === 'function') window.loadChartData(valid);
+  console.log('📊 Fallback chart loaded:', results.length, 'hari (urut awal→akhir):',
+    results.map(r => r.hari).join(', '));
+  if (typeof window.loadChartData === 'function') window.loadChartData(results);
 }
 
 // ── Supabase: load tabel halaman tertentu ────────────────────────────────────

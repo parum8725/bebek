@@ -752,8 +752,14 @@ function setHistoryLoading(isLoading, count) {
 function loadChartData(dailyRows) {
   initDayBuckets();
 
-  // Ambil 7 hari terakhir dari data history (bukan dari hari ini)
-  const rows7 = dailyRows.slice(-7);
+  // Pastikan URUT dari tanggal paling awal → paling akhir (apa pun sumbernya:
+  // RPC get_chart_harian atau fallback). Buang baris tanpa 'hari'.
+  const sorted = (dailyRows || [])
+    .filter(r => r && r.hari)
+    .sort((a, b) => String(a.hari).localeCompare(String(b.hari)));
+
+  // Ambil 7 hari TERAKHIR yang ada datanya, tetap urut awal→akhir
+  const rows7 = sorted.slice(-7);
 
   for (const row of rows7) {
     const [year, month, day] = String(row.hari).split('-').map(Number);

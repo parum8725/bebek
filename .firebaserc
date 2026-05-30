@@ -1,6 +1,6 @@
 {
   "projects": {
-    "default": "mikroklimat-dod-id"
+    "default": "mikroklimat-dod"
   },
   "targets": {},
   "etags": {}

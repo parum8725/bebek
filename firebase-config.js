@@ -3,12 +3,13 @@
  * Authentication → Sign-in method → Email/Password harus aktif.
  */
 window.__firebaseConfig = {
-  apiKey: 'AIzaSyD9bwhgAF5zocWLcxtEaHlVNthUmsM8cpg',
-  authDomain: 'mikroklimat-dod-id.firebaseapp.com',
+  apiKey: 'AIzaSyAiUdBLlfaemZ_aTytRiuHbvUurAGHnOgk',
+  authDomain: 'mikroklimat-dod.firebaseapp.com',
   databaseURL:
-    'https://mikroklimat-dod-id-default-rtdb.asia-southeast1.firebasedatabase.app',
-  projectId: 'mikroklimat-dod-id',
-  storageBucket: 'mikroklimat-dod-id.firebasestorage.app',
-  messagingSenderId: '794594833967',
-  appId: '1:794594833967:web:f58153993f51ad1447f8da',
+    'https://mikroklimat-dod-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId: 'mikroklimat-dod',
+  storageBucket: 'mikroklimat-dod.firebasestorage.app',
+  messagingSenderId: '1020423643943',
+  appId: '1:1020423643943:web:9fe4e849643821c5c87f02',
+  measurementId: 'G-F55GHD73DH',
 };
